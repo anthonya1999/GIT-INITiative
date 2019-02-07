@@ -261,14 +261,14 @@ bool Convert( const medialibrary::IFile* input, vlc_ml_file_t& output )
             vlc_assert_unreachable();
     }
 
-    output.b_removable = input->isRemovable();
+    //output.b_removable = input->isRemovable();
     output.b_present = true;
     try
     {
         if( !strdup_helper( input->mrl(), output.psz_mrl ) )
             return false;
     }
-    catch ( const medialibrary::fs::DeviceRemovedException& )
+    catch ( ... )
     {
         output.psz_mrl = nullptr;
         output.b_present = false;
@@ -388,7 +388,7 @@ bool Convert( const medialibrary::IFolder* input, vlc_ml_entry_point_t& output )
             return false;
         output.b_present = true;
     }
-    catch ( const medialibrary::fs::DeviceRemovedException& )
+    catch ( ... )
     {
         output.psz_mrl = nullptr;
         output.b_present = false;
@@ -410,7 +410,7 @@ input_item_t* MediaToInputItem( const medialibrary::IMedia* media )
     {
         mrl = (*it)->mrl();
     }
-    catch ( const medialibrary::fs::DeviceRemovedException& ex )
+    catch ( ... )
     {
         return nullptr;
     }
