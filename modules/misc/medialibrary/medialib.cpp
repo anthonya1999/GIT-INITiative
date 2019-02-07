@@ -414,7 +414,7 @@ int MediaLibrary::Control( int query, va_list args )
         {
             auto mrl = va_arg( args, const char* );
             auto res = va_arg( args, bool* );
-            *res = m_ml->isIndexed( mrl );
+            //*res = m_ml->isIndexed( mrl );
             break;
         }
         case VLC_ML_RELOAD_FOLDER:
