@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="14313.13.2" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES">
+<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="14460.31" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES">
     <dependencies>
-        <deployment identifier="macosx"/>
-        <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="14313.13.2"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="14460.31"/>
         <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
     </dependencies>
     <objects>
@@ -157,7 +156,7 @@
             <windowStyleMask key="styleMask" titled="YES" resizable="YES"/>
             <windowPositionMask key="initialPositionMask" leftStrut="YES" rightStrut="YES" topStrut="YES" bottomStrut="YES"/>
             <rect key="contentRect" x="105" y="903" width="580" height="620"/>
-            <rect key="screenRect" x="0.0" y="0.0" width="1920" height="1177"/>
+            <rect key="screenRect" x="0.0" y="0.0" width="1680" height="1027"/>
             <view key="contentView" id="2266">
                 <rect key="frame" x="0.0" y="0.0" width="580" height="620"/>
                 <autoresizingMask key="autoresizingMask"/>
@@ -852,7 +851,7 @@ Gw
             <point key="canvasLocation" x="265.5" y="1003"/>
         </customView>
         <customView translatesAutoresizingMaskIntoConstraints="NO" id="2440" userLabel="Video">
-            <rect key="frame" x="0.0" y="-4" width="582" height="501"/>
+            <rect key="frame" x="0.0" y="0.0" width="582" height="501"/>
             <subviews>
                 <button verticalHuggingPriority="251" mirrorLayoutDirectionWhenInternationalizing="always" translatesAutoresizingMaskIntoConstraints="NO" id="2448">
                     <rect key="frame" x="18" y="465" width="101" height="18"/>
@@ -1532,7 +1531,7 @@ Gw
             <point key="canvasLocation" x="883" y="158"/>
         </customView>
         <customView translatesAutoresizingMaskIntoConstraints="NO" id="2523" userLabel="Subtitles &amp; OSD Settings">
-            <rect key="frame" x="0.0" y="-1" width="571" height="402"/>
+            <rect key="frame" x="0.0" y="0.0" width="571" height="402"/>
             <subviews>
                 <box title="Display Settings" translatesAutoresizingMaskIntoConstraints="NO" id="2537">
                     <rect key="frame" x="17" y="16" width="537" height="214"/>
@@ -1994,7 +1993,7 @@ Gw
             <windowStyleMask key="styleMask" titled="YES"/>
             <windowPositionMask key="initialPositionMask" leftStrut="YES" rightStrut="YES" topStrut="YES" bottomStrut="YES"/>
             <rect key="contentRect" x="433" y="441" width="440" height="170"/>
-            <rect key="screenRect" x="0.0" y="0.0" width="1920" height="1177"/>
+            <rect key="screenRect" x="0.0" y="0.0" width="1680" height="1027"/>
             <view key="contentView" id="2678">
                 <rect key="frame" x="0.0" y="0.0" width="440" height="170"/>
                 <autoresizingMask key="autoresizingMask"/>
@@ -2072,7 +2071,7 @@ Gw
             <windowStyleMask key="styleMask" titled="YES" closable="YES" miniaturizable="YES" resizable="YES"/>
             <windowPositionMask key="initialPositionMask" leftStrut="YES" rightStrut="YES" topStrut="YES" bottomStrut="YES"/>
             <rect key="contentRect" x="340" y="383" width="485" height="254"/>
-            <rect key="screenRect" x="0.0" y="0.0" width="1920" height="1177"/>
+            <rect key="screenRect" x="0.0" y="0.0" width="1680" height="1027"/>
             <view key="contentView" id="3746">
                 <rect key="frame" x="0.0" y="0.0" width="485" height="254"/>
                 <autoresizingMask key="autoresizingMask"/>

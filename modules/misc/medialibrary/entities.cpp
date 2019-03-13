@@ -286,8 +286,8 @@ bool Convert( const medialibrary::IAlbum* input, vlc_ml_album_t& output )
     output.i_year = input->releaseYear();
 
     if( !strdup_helper( input->title(), output.psz_title ) ||
-        !strdup_helper( input->shortSummary(), output.psz_summary ) ||
-        !strdup_helper( input->thumbnailMrl(), output.psz_artwork_mrl ) )
+        !strdup_helper( input->shortSummary(), output.psz_summary ) /* ||
+        !strdup_helper( input->thumbnailMrl(), output.psz_artwork_mrl ) */ )
         return false;
 
     auto artist = input->albumArtist();
@@ -334,8 +334,8 @@ bool Convert( const medialibrary::IArtist* input, vlc_ml_artist_t& output )
     if ( unlikely( output.psz_name == nullptr ) )
         return false;
 
-    if( !strdup_helper( input->shortBio(), output.psz_shortbio ) ||
-        !strdup_helper( input->thumbnailMrl(), output.psz_artwork_mrl ) ||
+    if( !strdup_helper( input->shortBio(), output.psz_shortbio ) /* ||
+        !strdup_helper( input->thumbnailMrl(), output.psz_artwork_mrl ) */ ||
         !strdup_helper( input->musicBrainzId(), output.psz_mb_id ) )
         return false;
     return true;
