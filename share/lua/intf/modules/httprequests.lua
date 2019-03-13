@@ -142,12 +142,10 @@ processcommands = function ()
         if vlc.playlist.repeat_() then
             vlc.playlist.loop("off")
         end
-    elseif command == "pl_sd" then
-        if vlc.sd.is_loaded(val) then
-            vlc.sd.remove(val)
-        else
-            vlc.sd.add(val)
-        end
+    elseif command == "pl_sd_add" then
+        vlc.sd.add(val)
+    elseif command == "pl_sd_remove" then
+        vlc.sd.remove(val)
     elseif command == "fullscreen" then
         if vlc.object.vout() then
             vlc.video.fullscreen()

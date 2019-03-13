@@ -244,7 +244,7 @@ static int VideoAutoMenuBuilder( playlist_t *pl, input_thread_t *p_input,
     PUSH_VAR( "deinterlace-mode" );
 
     if( p_object )
-        vlc_object_release( p_object );
+        vout_Release( p_object );
     return VLC_SUCCESS;
 }
 
@@ -266,7 +266,7 @@ static int AudioAutoMenuBuilder( input_thread_t *p_input,
     PUSH_VAR( "visual" );
 
     if( p_object )
-        vlc_object_release( p_object );
+        aout_Release( p_object );
     return VLC_SUCCESS;
 }
 
@@ -636,7 +636,7 @@ QMenu *VLCMenuBar::AudioMenu( intf_thread_t *p_intf, QMenu * current )
 
     if( p_aout )
     {
-        vlc_object_release( p_aout );
+        aout_Release(p_aout);
     }
 
     return Populate( current, varnames, objects );
@@ -1036,7 +1036,7 @@ QMenu* VLCMenuBar::PopupMenu( intf_thread_t *p_intf, bool show )
                         qtr( "Leave Fullscreen" ),"" , ITEM_NORMAL,
                         VLC_OBJECT(THEPL), val, VLC_VAR_BOOL, b_isFullscreen );
             }
-            vlc_object_release( p_vout );
+            vout_Release(p_vout);
 
             menu->addSeparator();
         }
@@ -1090,7 +1090,7 @@ QMenu* VLCMenuBar::PopupMenu( intf_thread_t *p_intf, bool show )
         /* In skins interface, append some items */
         if( p_intf->p_sys->b_isDialogProvider )
         {
-            vlc_object_t* p_object = p_intf->obj.parent;
+            vlc_object_t* p_object = vlc_object_parent(p_intf);
             submenu->setTitle( qtr( "Interface" ) );
 
             /* Open skin dialog box */
@@ -1531,11 +1531,11 @@ void VLCMenuBar::DoAction( QObject *data )
         if( input != NULL )
         {
             vout_thread_t *vout = input_GetVout( input );
-            vlc_object_release( input );
+            input_Release(input);
             if( vout != NULL )
             {
                 var_Set( vout, var, val ); /* never void class */
-                vlc_object_release( vout );
+                vout_Release(vout);
             }
         }
     }

@@ -66,10 +66,8 @@ typedef struct {
 } PS_COLOR_TRANSFORM;
 
 typedef struct {
-    FLOAT RotX[4*4];
-    FLOAT RotY[4*4];
-    FLOAT RotZ[4*4];
     FLOAT View[4*4];
+    FLOAT Zoom[4*4];
     FLOAT Projection[4*4];
 } VS_PROJECTION_CONST;
 

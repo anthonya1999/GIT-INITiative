@@ -34,7 +34,6 @@
 
 #define GLEW_STATIC
 #include "../opengl/vout_helper.h"
-#include <GL/wglew.h>
 
 #include "common.h"
 
@@ -65,6 +64,7 @@ struct vout_display_sys_t
 
     vlc_gl_t              *gl;
     vout_display_opengl_t *vgl;
+    picture_pool_t        *pool;
 };
 
 static picture_pool_t *Pool  (vout_display_t *, unsigned);
@@ -128,16 +128,17 @@ static int Open(vout_display_t *vd, const vout_display_cfg_t *cfg,
     if (!sys->sys.b_windowless)
         EventThreadUpdateTitle(sys->sys.event, VOUT_TITLE " (OpenGL output)");
 
-    vout_window_t *surface = EmbedVideoWindow_Create(vd);
-    if (!surface)
+    vout_display_cfg_t embed_cfg = *cfg;
+    embed_cfg.window = EmbedVideoWindow_Create(vd);
+    if (!embed_cfg.window)
         goto error;
 
-    char *modlist = var_InheritString(surface, "gl");
-    sys->gl = vlc_gl_Create (surface, VLC_OPENGL, modlist);
+    char *modlist = var_InheritString(embed_cfg.window, "gl");
+    sys->gl = vlc_gl_Create(&embed_cfg, VLC_OPENGL, modlist);
     free(modlist);
     if (!sys->gl)
     {
-        vlc_object_release(surface);
+        vlc_object_delete(embed_cfg.window);
         goto error;
     }
 
@@ -148,7 +149,7 @@ static int Open(vout_display_t *vd, const vout_display_cfg_t *cfg,
     if (vlc_gl_MakeCurrent (sys->gl))
         goto error;
     sys->vgl = vout_display_opengl_New(&fmt, &subpicture_chromas, sys->gl,
-                                       &cfg->viewpoint);
+                                       &cfg->viewpoint, context);
     vlc_gl_ReleaseCurrent (sys->gl);
     if (!sys->vgl)
         goto error;
@@ -189,7 +190,7 @@ static void Close(vout_display_t *vd)
             vlc_gl_ReleaseCurrent (gl);
         }
         vlc_gl_Release (gl);
-        vlc_object_release(surface);
+        vlc_object_delete(surface);
     }
 
     CommonClean(vd);
@@ -202,12 +203,12 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned count)
 {
     vout_display_sys_t *sys = vd->sys;
 
-    if (!sys->sys.pool && vlc_gl_MakeCurrent (sys->gl) == VLC_SUCCESS)
+    if (!sys->pool && vlc_gl_MakeCurrent (sys->gl) == VLC_SUCCESS)
     {
-        sys->sys.pool = vout_display_opengl_GetPool(sys->vgl, count);
+        sys->pool = vout_display_opengl_GetPool(sys->vgl, count);
         vlc_gl_ReleaseCurrent (sys->gl);
     }
-    return sys->sys.pool;
+    return sys->pool;
 }
 
 static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpicture,

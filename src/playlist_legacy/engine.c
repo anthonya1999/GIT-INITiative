@@ -342,7 +342,7 @@ void playlist_Destroy( playlist_t *p_playlist )
         vlc_http_cookies_destroy( cookies );
     }
 
-    vlc_object_release( p_playlist );
+    vlc_object_delete(p_playlist);
 }
 
 /** Get current playing input.
@@ -353,7 +353,7 @@ input_thread_t *playlist_CurrentInputLocked( playlist_t *p_playlist )
 
     input_thread_t *p_input = pl_priv(p_playlist)->p_input;
     if( p_input != NULL )
-        vlc_object_hold( p_input );
+        input_Hold( p_input );
     return p_input;
 }
 
@@ -432,8 +432,11 @@ static void VariablesInit( playlist_t *p_playlist )
     var_Create( p_playlist, "rate-faster", VLC_VAR_VOID );
     var_AddCallback( p_playlist, "rate-faster", RateOffsetCallback, NULL );
 
-    var_Create( p_playlist, "video-splitter", VLC_VAR_STRING | VLC_VAR_DOINHERIT );
-    var_AddCallback( p_playlist, "video-splitter", VideoSplitterCallback, NULL );
+    if (config_GetType("video-splitter"))
+    {
+        var_Create( p_playlist, "video-splitter", VLC_VAR_STRING | VLC_VAR_DOINHERIT );
+        var_AddCallback( p_playlist, "video-splitter", VideoSplitterCallback, NULL );
+    }
 
     var_Create( p_playlist, "video-filter", VLC_VAR_STRING | VLC_VAR_DOINHERIT );
     var_Create( p_playlist, "sub-source", VLC_VAR_STRING | VLC_VAR_DOINHERIT );

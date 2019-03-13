@@ -304,7 +304,7 @@ static void LoadLocalStorage( addons_manager_t *p_manager )
 {
     addons_finder_t *p_finder =
         vlc_custom_create( p_manager->p_priv->p_parent, sizeof( *p_finder ), "entries finder" );
-    p_finder->obj.flags |= OBJECT_FLAGS_NOINTERACT;
+    p_finder->obj.no_interact = true;
 
     module_t *p_module = module_need( p_finder, "addons finder",
                                       "addons.store.list", true );
@@ -319,7 +319,7 @@ static void LoadLocalStorage( addons_manager_t *p_manager )
 
         ARRAY_RESET( p_finder->entries );
     }
-    vlc_object_release( p_finder );
+    vlc_object_delete(p_finder);
 }
 
 static void finder_thread_interrupted( void* p_data )
@@ -362,7 +362,7 @@ static void *FinderThread( void *p_data )
 
         if( p_finder != NULL )
         {
-            p_finder->obj.flags |= OBJECT_FLAGS_NOINTERACT;
+            p_finder->obj.no_interact = true;
             module_t *p_module;
             ARRAY_INIT( p_finder->entries );
             p_finder->psz_uri = psz_uri;
@@ -376,7 +376,7 @@ static void *FinderThread( void *p_data )
             }
             ARRAY_RESET( p_finder->entries );
             free( psz_uri );
-            vlc_object_release( p_finder );
+            vlc_object_delete(p_finder);
         }
 
         p_manager->owner.discovery_ended( p_manager );
@@ -394,7 +394,7 @@ static int addons_manager_WriteCatalog( addons_manager_t *p_manager )
 
     addons_storage_t *p_storage =
         vlc_custom_create( p_manager->p_priv->p_parent, sizeof( *p_storage ), "entries storage" );
-    p_storage->obj.flags |= OBJECT_FLAGS_NOINTERACT;
+    p_storage->obj.no_interact = true;
 
     module_t *p_module = module_need( p_storage, "addons storage",
                                       "addons.store.install", true );
@@ -406,7 +406,7 @@ static int addons_manager_WriteCatalog( addons_manager_t *p_manager )
         vlc_mutex_unlock( &p_manager->p_priv->finder.lock );
         module_unneed( p_storage, p_module );
     }
-    vlc_object_release( p_storage );
+    vlc_object_delete(p_storage);
 
     return i_return;
 }
@@ -423,7 +423,7 @@ static int installOrRemoveAddon( addons_manager_t *p_manager, addon_entry_t *p_e
 
     addons_storage_t *p_storage =
         vlc_custom_create( p_manager->p_priv->p_parent, sizeof( *p_storage ), "entries storage" );
-    p_storage->obj.flags |= OBJECT_FLAGS_NOINTERACT;
+    p_storage->obj.no_interact = true;
 
     module_t *p_module = module_need( p_storage, "addons storage",
                                       "addons.store.install", true );
@@ -443,7 +443,7 @@ static int installOrRemoveAddon( addons_manager_t *p_manager, addon_entry_t *p_e
             vlc_mutex_unlock( &p_entry->lock );
         }
     }
-    vlc_object_release( p_storage );
+    vlc_object_delete(p_storage);
 
     return i_return;
 }

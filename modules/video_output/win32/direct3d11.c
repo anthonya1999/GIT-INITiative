@@ -54,6 +54,7 @@
 #include "d3d11_shaders.h"
 
 #include "common.h"
+#include "../video_chroma/copy.h"
 
 DEFINE_GUID(GUID_SWAPCHAIN_WIDTH,  0xf1b59347, 0x1643, 0x411a, 0xad, 0x6b, 0xc7, 0x80, 0x17, 0x7a, 0x06, 0xb6);
 DEFINE_GUID(GUID_SWAPCHAIN_HEIGHT, 0x6ea976a0, 0x9d60, 0x4bb7, 0xa5, 0xa9, 0x7d, 0xd1, 0x18, 0x7f, 0xc9, 0xbd);
@@ -101,6 +102,7 @@ struct vout_display_sys_t
     ID3D11Query              *prepareWait;
 
     picture_sys_t            stagingSys;
+    picture_pool_t           *pool; /* hardware decoding pool */
 
     ID3D11RenderTargetView   *swapchainTargetView[D3D11_MAX_SHADER_VIEW];
 
@@ -153,37 +155,6 @@ static void SetQuadVSProjection(vout_display_t *, d3d_quad_t *, const vlc_viewpo
 static void UpdatePicQuadPosition(vout_display_t *);
 
 static int Control(vout_display_t *, int, va_list);
-
-static int Direct3D11MapPoolTexture(picture_t *picture)
-{
-    picture_sys_t *p_sys = picture->p_sys;
-    D3D11_MAPPED_SUBRESOURCE mappedResource;
-    HRESULT hr;
-
-    ID3D11Device *dev;
-    ID3D11DeviceContext_GetDevice(p_sys->context, &dev);
-    ID3D11Device_Release(dev);
-
-#ifndef NDEBUG
-    D3D11_TEXTURE2D_DESC dsc;
-    ID3D11Texture2D_GetDesc(p_sys->texture[KNOWN_DXGI_INDEX], &dsc);
-    assert(dsc.CPUAccessFlags & D3D11_CPU_ACCESS_WRITE);
-    assert(dsc.Usage & D3D11_USAGE_DYNAMIC);
-#endif
-
-    hr = ID3D11DeviceContext_Map(p_sys->context, p_sys->resource[KNOWN_DXGI_INDEX], p_sys->slice_index, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
-    if( FAILED(hr) )
-    {
-        return VLC_EGENERIC;
-    }
-    return CommonUpdatePicture(picture, NULL, mappedResource.pData, mappedResource.RowPitch);
-}
-
-static void Direct3D11UnmapPoolTexture(picture_t *picture)
-{
-    picture_sys_t *p_sys = picture->p_sys;
-    ID3D11DeviceContext_Unmap(p_sys->context, p_sys->resource[KNOWN_DXGI_INDEX], 0);
-}
 
 #if VLC_WINSTORE_APP
 static bool GetRect(const vout_display_sys_win32_t *p_sys, RECT *out)
@@ -543,7 +514,6 @@ static int Open(vout_display_t *vd, const vout_display_cfg_t *cfg,
 
     if (Direct3D11Open(vd, fmtp)) {
         msg_Err(vd, "Direct3D11 could not be opened");
-        assert(!vd->info.is_slow); /* vd->info was not modified */
         goto error;
     }
 
@@ -566,7 +536,8 @@ static int Open(vout_display_t *vd, const vout_display_cfg_t *cfg,
     else
         vd->info.subpicture_chromas = NULL;
 
-    vd->pool    = Pool;
+    if (is_d3d11_opaque(vd->fmt.i_chroma))
+        vd->pool    = Pool;
     vd->prepare = Prepare;
     vd->display = Display;
     vd->control = Control;
@@ -597,93 +568,74 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned pool_size)
     picture_t *picture;
     unsigned  picture_count = 0;
 
-    if (sys->sys.pool)
-        return sys->sys.pool;
-
-    if (vd->info.is_slow)
-        pool_size = 1;
+    if (sys->pool)
+        return sys->pool;
 
     video_format_t surface_fmt = vd->fmt;
     surface_fmt.i_width  = sys->picQuad.i_width;
     surface_fmt.i_height = sys->picQuad.i_height;
 
-    if (sys->picQuad.textureFormat->formatTexture == DXGI_FORMAT_UNKNOWN)
-        sys->sys.pool = picture_pool_NewFromFormat( &surface_fmt, pool_size );
-    else
-    {
-        ID3D11Texture2D  *textures[pool_size * D3D11_MAX_SHADER_VIEW];
-        memset(textures, 0, sizeof(textures));
-        unsigned slices = pool_size;
-        if (!CanUseVoutPool(&sys->d3d_dev, pool_size))
-            /* only provide enough for the filters, we can still do direct rendering */
-            slices = __MIN(slices, 6);
+    ID3D11Texture2D  *textures[pool_size * D3D11_MAX_SHADER_VIEW];
+    memset(textures, 0, sizeof(textures));
+    unsigned slices = pool_size;
+    if (!CanUseVoutPool(&sys->d3d_dev, pool_size))
+        /* only provide enough for the filters, we can still do direct rendering */
+        slices = __MIN(slices, 6);
 
-        if (AllocateTextures(vd, &sys->d3d_dev, sys->picQuad.textureFormat, &surface_fmt, slices, textures))
+    if (AllocateTextures(vd, &sys->d3d_dev, sys->picQuad.textureFormat, &surface_fmt, slices, textures))
+        goto error;
+
+    pictures = calloc(pool_size, sizeof(*pictures));
+    if (!pictures)
+        goto error;
+
+    for (picture_count = 0; picture_count < pool_size; picture_count++) {
+        picture_sys_t *picsys = calloc(1, sizeof(*picsys));
+        if (unlikely(picsys == NULL))
             goto error;
 
-        pictures = calloc(pool_size, sizeof(*pictures));
-        if (!pictures)
-            goto error;
+        for (unsigned plane = 0; plane < D3D11_MAX_SHADER_VIEW; plane++)
+            picsys->texture[plane] = textures[picture_count * D3D11_MAX_SHADER_VIEW + plane];
 
-        for (picture_count = 0; picture_count < pool_size; picture_count++) {
-            picture_sys_t *picsys = calloc(1, sizeof(*picsys));
-            if (unlikely(picsys == NULL))
-                goto error;
-
-            for (unsigned plane = 0; plane < D3D11_MAX_SHADER_VIEW; plane++)
-                picsys->texture[plane] = textures[picture_count * D3D11_MAX_SHADER_VIEW + plane];
-
-            picture_resource_t resource = {
-                .p_sys = picsys,
-                .pf_destroy = DestroyDisplayPoolPicture,
-            };
-
-            picture = picture_NewFromResource(&surface_fmt, &resource);
-            if (unlikely(picture == NULL)) {
-                free(picsys);
-                msg_Err( vd, "Failed to create picture %d in the pool.", picture_count );
-                goto error;
-            }
-
-            pictures[picture_count] = picture;
-            picsys->slice_index = picture_count;
-            picsys->formatTexture = sys->picQuad.textureFormat->formatTexture;
-            /* each picture_t holds a ref to the context and release it on Destroy */
-            picsys->context = sys->d3d_dev.d3dcontext;
-            ID3D11DeviceContext_AddRef(sys->d3d_dev.d3dcontext);
-        }
-
-#ifdef HAVE_ID3D11VIDEODECODER
-        if (is_d3d11_opaque(surface_fmt.i_chroma) && !sys->legacy_shader)
-#endif
-        {
-            for (picture_count = 0; picture_count < pool_size; picture_count++) {
-                picture_sys_t *p_sys = pictures[picture_count]->p_sys;
-                if (!p_sys->texture[0])
-                    continue;
-                if (D3D11_AllocateResourceView(vd, sys->d3d_dev.d3ddevice, sys->picQuad.textureFormat,
-                                             p_sys->texture, picture_count,
-                                             p_sys->renderSrc))
-                    goto error;
-            }
-        }
-
-        picture_pool_configuration_t pool_cfg = {
-            .picture       = pictures,
-            .picture_count = pool_size,
+        picture_resource_t resource = {
+            .p_sys = picsys,
+            .pf_destroy = DestroyDisplayPoolPicture,
         };
-        if (vd->info.is_slow && !is_d3d11_opaque(surface_fmt.i_chroma)) {
-            pool_cfg.lock          = Direct3D11MapPoolTexture;
-            //pool_cfg.unlock        = Direct3D11UnmapPoolTexture;
+
+        picture = picture_NewFromResource(&surface_fmt, &resource);
+        if (unlikely(picture == NULL)) {
+            free(picsys);
+            msg_Err( vd, "Failed to create picture %d in the pool.", picture_count );
+            goto error;
         }
-        sys->sys.pool = picture_pool_NewExtended( &pool_cfg );
+
+        pictures[picture_count] = picture;
+        picsys->slice_index = picture_count;
+        picsys->formatTexture = sys->picQuad.textureFormat->formatTexture;
+        /* each picture_t holds a ref to the context and release it on Destroy */
+        picsys->context = sys->d3d_dev.d3dcontext;
+        ID3D11DeviceContext_AddRef(sys->d3d_dev.d3dcontext);
     }
 
+#ifdef HAVE_ID3D11VIDEODECODER
+    if (!sys->legacy_shader)
+#endif
+    {
+        for (picture_count = 0; picture_count < pool_size; picture_count++) {
+            picture_sys_t *p_sys = pictures[picture_count]->p_sys;
+            if (!p_sys->texture[0])
+                continue;
+            if (D3D11_AllocateResourceView(vd, sys->d3d_dev.d3ddevice, sys->picQuad.textureFormat,
+                                         p_sys->texture, picture_count,
+                                         p_sys->renderSrc))
+                goto error;
+        }
+    }
+
+    sys->pool = picture_pool_New( pool_size, pictures );
+
 error:
-    if (sys->sys.pool == NULL) {
-        picture_pool_configuration_t pool_cfg = {
-            .picture_count = 0,
-        };
+    if (sys->pool == NULL) {
         if (pictures) {
             msg_Dbg(vd, "Failed to create the picture d3d11 pool");
             for (unsigned i=0;i<picture_count; ++i)
@@ -692,12 +644,12 @@ error:
         }
 
         /* create an empty pool to avoid crashing */
-        sys->sys.pool = picture_pool_NewExtended( &pool_cfg );
+        sys->pool = picture_pool_New( 0, NULL );
     } else {
         msg_Dbg(vd, "D3D11 pool succeed with %d surfaces (%dx%d) context 0x%p",
                 pool_size, surface_fmt.i_width, surface_fmt.i_height, sys->d3d_dev.d3dcontext);
     }
-    return sys->sys.pool;
+    return sys->pool;
 }
 
 static void DestroyDisplayPoolPicture(picture_t *picture)
@@ -705,60 +657,6 @@ static void DestroyDisplayPoolPicture(picture_t *picture)
     picture_sys_t *p_sys = picture->p_sys;
     ReleasePictureSys( p_sys );
     free(p_sys);
-}
-
-/* rotation around the Z axis */
-static void getZRotMatrix(float theta, FLOAT matrix[static 16])
-{
-    float st, ct;
-
-    sincosf(theta, &st, &ct);
-
-    const FLOAT m[] = {
-    /*  x    y    z    w */
-        ct,  -st, 0.f, 0.f,
-        st,  ct,  0.f, 0.f,
-        0.f, 0.f, 1.f, 0.f,
-        0.f, 0.f, 0.f, 1.f
-    };
-
-    memcpy(matrix, m, sizeof(m));
-}
-
-/* rotation around the Y axis */
-static void getYRotMatrix(float theta, FLOAT matrix[static 16])
-{
-    float st, ct;
-
-    sincosf(theta, &st, &ct);
-
-    const FLOAT m[] = {
-    /*  x    y    z    w */
-        ct,  0.f, -st, 0.f,
-        0.f, 1.f, 0.f, 0.f,
-        st,  0.f, ct,  0.f,
-        0.f, 0.f, 0.f, 1.f
-    };
-
-    memcpy(matrix, m, sizeof(m));
-}
-
-/* rotation around the X axis */
-static void getXRotMatrix(float phi, FLOAT matrix[static 16])
-{
-    float sp, cp;
-
-    sincosf(phi, &sp, &cp);
-
-    const FLOAT m[] = {
-    /*  x    y    z    w */
-        1.f, 0.f, 0.f, 0.f,
-        0.f, cp,  sp,  0.f,
-        0.f, -sp, cp,  0.f,
-        0.f, 0.f, 0.f, 1.f
-    };
-
-    memcpy(matrix, m, sizeof(m));
 }
 
 static void getZoomMatrix(float zoom, FLOAT matrix[static 16]) {
@@ -828,16 +726,13 @@ static void SetQuadVSProjection(vout_display_t *vd, d3d_quad_t *quad, const vlc_
     if (!quad->pVertexShaderConstants)
         return;
 
-#define RAD(d) ((float) ((d) * M_PI / 180.f))
-    float f_fovx = RAD(p_vp->fov);
+    // Convert degree into radian
+    float f_fovx = p_vp->fov * (float)M_PI / 180.f;
     if ( f_fovx > FIELD_OF_VIEW_DEGREES_MAX * M_PI / 180 + 0.001f ||
          f_fovx < -0.001f )
         return;
 
     float f_sar = (float) sys->sys.vdcfg.display.width / sys->sys.vdcfg.display.height;
-    float f_teta = RAD(p_vp->yaw) - (float) M_PI_2;
-    float f_phi  = RAD(p_vp->pitch);
-    float f_roll = RAD(p_vp->roll);
     float f_fovy = UpdateFOVy(f_fovx, f_sar);
     float f_z = UpdateZ(f_fovx, f_fovy);
 
@@ -846,14 +741,14 @@ static void SetQuadVSProjection(vout_display_t *vd, d3d_quad_t *quad, const vlc_
     hr = ID3D11DeviceContext_Map(sys->d3d_dev.d3dcontext, (ID3D11Resource *)quad->pVertexShaderConstants, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
     if (SUCCEEDED(hr)) {
         VS_PROJECTION_CONST *dst_data = mapped.pData;
-        getXRotMatrix(f_phi, dst_data->RotX);
-        getYRotMatrix(f_teta,   dst_data->RotY);
-        getZRotMatrix(f_roll,  dst_data->RotZ);
-        getZoomMatrix(SPHERE_RADIUS * f_z, dst_data->View);
+        getZoomMatrix(SPHERE_RADIUS * f_z, dst_data->Zoom);
         getProjectionMatrix(f_sar, f_fovy, dst_data->Projection);
+
+        vlc_viewpoint_t vp;
+        vlc_viewpoint_reverse(&vp, p_vp);
+        vlc_viewpoint_to_4x4(&vp, dst_data->View);
     }
     ID3D11DeviceContext_Unmap(sys->d3d_dev.d3dcontext, (ID3D11Resource *)quad->pVertexShaderConstants, 0);
-#undef RAD
 }
 
 static int Control(vout_display_t *vd, int query, va_list args)
@@ -889,7 +784,7 @@ static void PreparePicture(vout_display_t *vd, picture_t *picture, subpicture_t 
 {
     vout_display_sys_t *sys = vd->sys;
 
-    if (sys->picQuad.textureFormat->formatTexture == DXGI_FORMAT_UNKNOWN)
+    if (sys->picQuad.textureFormat->formatTexture == DXGI_FORMAT_UNKNOWN || !is_d3d11_opaque(picture->format.i_chroma))
     {
         D3D11_MAPPED_SUBRESOURCE mappedResource;
         D3D11_TEXTURE2D_DESC texDesc;
@@ -930,13 +825,10 @@ static void PreparePicture(vout_display_t *vd, picture_t *picture, subpicture_t 
     {
         picture_sys_t *p_sys = ActivePictureSys(picture);
 
-        if (is_d3d11_opaque(picture->format.i_chroma))
-            d3d11_device_lock( &sys->d3d_dev );
+        d3d11_device_lock( &sys->d3d_dev );
 
-        if (!is_d3d11_opaque(picture->format.i_chroma) || sys->legacy_shader) {
+        if (sys->legacy_shader) {
             D3D11_TEXTURE2D_DESC srcDesc,texDesc;
-            if (!is_d3d11_opaque(picture->format.i_chroma))
-                Direct3D11UnmapPoolTexture(picture);
             ID3D11Texture2D_GetDesc(p_sys->texture[KNOWN_DXGI_INDEX], &srcDesc);
             ID3D11Texture2D_GetDesc(sys->stagingSys.texture[0], &texDesc);
             D3D11_BOX box = {
@@ -1043,7 +935,7 @@ static void PreparePicture(vout_display_t *vd, picture_t *picture, subpicture_t 
             SleepEx(2, TRUE);
     }
 
-    if (is_d3d11_opaque(picture->format.i_chroma))
+    if (is_d3d11_opaque(picture->format.i_chroma) && sys->picQuad.textureFormat->formatTexture != DXGI_FORMAT_UNKNOWN)
         d3d11_device_unlock( &sys->d3d_dev );
 }
 
@@ -1506,10 +1398,7 @@ static bool CanUseTextureArray(vout_display_t *vd)
     return false;
 #else
     struct wddm_version WDDM = {
-        .wddm         = 22,
-        .d3d_features = 19,
-        .revision     = 162,
-        .build        = 0,
+        .revision     = 162, // 17.5.1 - 2017/05/04
     };
     if (D3D11CheckDriverVersion(&vd->sys->d3d_dev, GPU_MANUFACTURER_AMD, &WDDM) == VLC_SUCCESS)
         return true;
@@ -1540,10 +1429,7 @@ static bool BogusZeroCopy(vout_display_t *vd)
     case 0x15DD: // RX Vega 8/11 (Ryzen iGPU)
     {
         struct wddm_version WDDM = {
-            .wddm         = 0,
-            .d3d_features = 0,
-            .revision     = 14011,
-            .build        = 0,
+            .revision     = 14011, // 18.10.2 - 2018/06/11
         };
         return D3D11CheckDriverVersion(&vd->sys->d3d_dev, GPU_MANUFACTURER_AMD, &WDDM) != VLC_SUCCESS;
     }
@@ -1609,7 +1495,7 @@ static int Direct3D11CreateFormatResources(vout_display_t *vd, const video_forma
          vd->source.projection_mode == PROJECTION_MODE_CUBEMAP_LAYOUT_STANDARD )
         SetQuadVSProjection( vd, &sys->picQuad, &sys->sys.vdcfg.viewpoint );
 
-    if (!vd->info.is_slow) {
+    if (is_d3d11_opaque(fmt->i_chroma)) {
         ID3D10Multithread *pMultithread;
         hr = ID3D11Device_QueryInterface( sys->d3d_dev.d3ddevice, &IID_ID3D10Multithread, (void **)&pMultithread);
         if (SUCCEEDED(hr)) {
@@ -1642,7 +1528,7 @@ static int Direct3D11CreateFormatResources(vout_display_t *vd, const video_forma
     }
 #endif
 
-    vd->info.is_slow = !is_d3d11_opaque(fmt->i_chroma) && sys->picQuad.textureFormat->formatTexture != DXGI_FORMAT_UNKNOWN;
+    vd->info.is_slow = false;
     return VLC_SUCCESS;
 }
 
@@ -1733,10 +1619,10 @@ static void Direct3D11DestroyPool(vout_display_t *vd)
 {
     vout_display_sys_t *sys = vd->sys;
 
-    if (sys->sys.pool)
+    if (sys->pool)
     {
-        picture_pool_Release(sys->sys.pool);
-        sys->sys.pool = NULL;
+        picture_pool_Release(sys->pool);
+        sys->pool = NULL;
     }
 }
 
@@ -1905,7 +1791,7 @@ static int Direct3D11MapSubpicture(vout_display_t *vd, int *subpicture_region_co
 
         hr = ID3D11DeviceContext_Map(sys->d3d_dev.d3dcontext, ((d3d_quad_t *) quad_picture->p_sys)->picSys.resource[KNOWN_DXGI_INDEX], 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
         if( SUCCEEDED(hr) ) {
-            err = CommonUpdatePicture(quad_picture, NULL, mappedResource.pData, mappedResource.RowPitch);
+            err = picture_UpdatePlanes(quad_picture, mappedResource.pData, mappedResource.RowPitch);
             if (err != VLC_SUCCESS) {
                 msg_Err(vd, "Failed to set the buffer on the SPU picture" );
                 ID3D11DeviceContext_Unmap(sys->d3d_dev.d3dcontext, ((d3d_quad_t *) quad_picture->p_sys)->picSys.resource[KNOWN_DXGI_INDEX], 0);

@@ -263,7 +263,7 @@ int transcode_audio_process( sout_stream_t *p_stream,
             if( !transcode_encoder_opened( id->encoder ) )
             {
                 transcode_encoder_audio_configure( VLC_OBJECT(p_stream), id->p_enccfg,
-                                                   &id->decoder_out.audio, id->encoder );
+                                                   &id->decoder_out.audio, id->encoder, true );
                 id->fmt_input_audio = id->decoder_out.audio;
             }
             else
@@ -337,14 +337,14 @@ int transcode_audio_process( sout_stream_t *p_stream,
 
         /* Run filter chain */
         p_audio_buf = aout_FiltersPlay( id->p_af_chain, p_audio_buf, 1.f );
-        if( !p_audio_buf )
-            goto error;
+        if( p_audio_buf  )
+        {
+            p_audio_buf->i_dts = p_audio_buf->i_pts;
 
-        p_audio_buf->i_dts = p_audio_buf->i_pts;
-
-        block_t *p_block = transcode_encoder_encode( id->encoder, p_audio_buf );
-        block_ChainAppend( out, p_block );
-        block_Release( p_audio_buf );
+            block_t *p_block = transcode_encoder_encode( id->encoder, p_audio_buf );
+            block_ChainAppend( out, p_block );
+            block_Release( p_audio_buf );
+        }
         continue;
 error:
         if( p_audio_buf )

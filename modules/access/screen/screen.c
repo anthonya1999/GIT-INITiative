@@ -224,22 +224,21 @@ static int Open( vlc_object_t *p_this )
     if( mouseurl )
     {
         image_handler_t *p_image;
-        video_format_t fmt_in, fmt_out;
+        video_format_t fmt_out;
         msg_Dbg( p_demux, "Using %s for the mouse pointer image", mouseurl );
-        memset( &fmt_in, 0, sizeof( fmt_in ) );
-        memset( &fmt_out, 0, sizeof( fmt_out ) );
-        fmt_out.i_chroma = VLC_CODEC_RGBA;
+        video_format_Init( &fmt_out, VLC_CODEC_RGBA );
         p_image = image_HandlerCreate( p_demux );
         if( p_image )
         {
             p_sys->p_mouse =
-                image_ReadUrl( p_image, mouseurl, &fmt_in, &fmt_out );
+                image_ReadUrl( p_image, mouseurl, &fmt_out );
             image_HandlerDelete( p_image );
         }
         if( !p_sys->p_mouse )
             msg_Err( p_demux, "Failed to open mouse pointer image (%s)",
                      mouseurl );
         free( mouseurl );
+        video_format_Clean( &fmt_out );
     }
 #endif
 
@@ -265,7 +264,7 @@ static void Close( vlc_object_t *p_this )
     if( p_sys->p_blend )
     {
         module_unneed( p_sys->p_blend, p_sys->p_blend->p_module );
-        vlc_object_release( p_sys->p_blend );
+        vlc_object_delete(p_sys->p_blend);
     }
 #endif
     free( p_sys );
@@ -383,7 +382,7 @@ void RenderCursor( demux_t *p_demux, int i_x, int i_y,
             if( !p_sys->p_blend->p_module )
             {
                 msg_Err( p_demux, "Could not load video blending module" );
-                vlc_object_release( p_sys->p_blend );
+                vlc_object_delete(p_sys->p_blend);
                 p_sys->p_blend = NULL;
             }
         }

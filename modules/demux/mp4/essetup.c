@@ -52,7 +52,7 @@ static void SetupGlobalExtensions( mp4_track_t *p_track, MP4_Box_t *p_sample )
 static void SetupESDS( demux_t *p_demux, mp4_track_t *p_track, const MP4_descriptor_decoder_config_t *p_decconfig )
 {
     /* First update information based on i_objectTypeIndication */
-    /* See 14496-1 and http://www.mp4ra.org/object.html */
+    /* See 14496-1 and http://mp4ra.org/#/object_types */
     switch( p_decconfig->i_objectProfileIndication )
     {
     case( 0x20 ): /* MPEG4 VIDEO */
@@ -116,11 +116,16 @@ static void SetupESDS( demux_t *p_demux, mp4_track_t *p_track, const MP4_descrip
     case( 0xa6 ):
         p_track->fmt.i_codec = VLC_CODEC_EAC3;
         break;
+    case( 0xa9 ): /* dts */
+        p_track->fmt.i_codec = VLC_CODEC_DTS;
+        break;
     case( 0xaa ): /* DTS-HD HRA */
     case( 0xab ): /* DTS-HD Master Audio */
         p_track->fmt.i_profile = PROFILE_DTS_HD;
-        /* fallthrough */
-    case( 0xa9 ): /* dts */
+        p_track->fmt.i_codec = VLC_CODEC_DTS;
+        break;
+    case( 0xac ): /* Extension Substream containing only LBR */
+        p_track->fmt.i_profile = PROFILE_DTS_EXPRESS;
         p_track->fmt.i_codec = VLC_CODEC_DTS;
         break;
     case( 0xDD ):
@@ -347,11 +352,24 @@ int SetupVideoES( demux_t *p_demux, mp4_track_t *p_track, MP4_Box_t *p_sample )
             p_track->fmt.video.orientation = ORIENT_ROTATED_90;
             break;
         case 180:
-            p_track->fmt.video.orientation = ORIENT_ROTATED_180;
+            if (p_track->i_flip == 1) {
+                p_track->fmt.video.orientation = ORIENT_VFLIPPED;
+            } else {
+                p_track->fmt.video.orientation = ORIENT_ROTATED_180;
+            }
             break;
         case 270:
             p_track->fmt.video.orientation = ORIENT_ROTATED_270;
             break;
+    }
+
+    /* Flip, unless already flipped */
+    if (p_track->i_flip == 1 && (int)p_track->f_rotation != 180) {
+    fprintf(stderr, "p_track->f_rotation %f flip %d\n", p_track->f_rotation, p_track->i_flip);
+        video_transform_t transform = (video_transform_t)p_track->fmt.video.orientation;
+        /* Flip first then rotate */
+        p_track->fmt.video.orientation = ORIENT_HFLIPPED;
+        video_format_TransformBy(&p_track->fmt.video, transform);
     }
 
     /* Set 360 video mode */
@@ -852,9 +870,12 @@ int SetupAudioES( demux_t *p_demux, mp4_track_t *p_track, MP4_Box_t *p_sample )
 
     p_track->fmt.audio.i_channels = p_soun->i_channelcount;
     p_track->fmt.audio.i_rate = p_soun->i_sampleratehi;
-    p_track->fmt.i_bitrate = p_soun->i_channelcount * p_soun->i_sampleratehi *
-                             p_soun->i_samplesize;
-    p_track->fmt.audio.i_bitspersample = p_soun->i_samplesize;
+    if( p_soun->i_qt_version == 0 ) /* otherwise defaults to meaningless 16 */
+    {
+        p_track->fmt.audio.i_bitspersample = p_soun->i_samplesize;
+        p_track->fmt.i_bitrate = p_soun->i_channelcount * p_soun->i_sampleratehi *
+                                 p_soun->i_samplesize;
+    }
 
     p_track->fmt.i_original_fourcc = p_sample->i_type;
 
@@ -1063,7 +1084,18 @@ int SetupAudioES( demux_t *p_demux, mp4_track_t *p_track, MP4_Box_t *p_sample )
             break;
         }
 
-        case ATOM_dtse: /* DTS‐HD Lossless formats */
+        case ATOM_dtsc: /* DTS */
+        {
+            p_track->fmt.i_codec = VLC_CODEC_DTS;
+            p_track->fmt.i_profile = PROFILE_DTS;
+            break;
+        }
+        case ATOM_dtse: /* DTS LBR */
+        {
+            p_track->fmt.i_codec = VLC_CODEC_DTS;
+            p_track->fmt.i_profile = PROFILE_DTS_EXPRESS;
+            break;
+        }
         case ATOM_dtsh: /* DTS‐HD audio formats */
         case ATOM_dtsl: /* DTS‐HD Lossless formats */
         {
@@ -1072,13 +1104,27 @@ int SetupAudioES( demux_t *p_demux, mp4_track_t *p_track, MP4_Box_t *p_sample )
             break;
         }
 
+        case VLC_FOURCC( 't', 'w', 'o', 's' ):
+        case VLC_FOURCC( 's', 'o', 'w', 't' ):
+            p_track->fmt.i_codec = p_sample->i_type;
+            p_track->fmt.audio.i_bitspersample = 16;
+            break;
+
+        case 0x0000000:
         case( VLC_FOURCC( 'r', 'a', 'w', ' ' ) ):
         case( VLC_FOURCC( 'N', 'O', 'N', 'E' ) ):
         {
             if( (p_soun->i_samplesize+7)/8 == 1 )
+            {
                 p_track->fmt.i_codec = VLC_CODEC_U8;
+                p_track->fmt.audio.i_bitspersample = 8;
+            }
             else
+            {
                 p_track->fmt.i_codec = VLC_FOURCC( 't', 'w', 'o', 's' );
+                p_track->fmt.audio.i_bitspersample = 16;
+            }
+            p_track->fmt.i_original_fourcc = p_track->fmt.i_codec;
 
             /* Buggy files workaround */
             if( (p_track->i_timescale != p_soun->i_sampleratehi) )
@@ -1096,18 +1142,22 @@ int SetupAudioES( demux_t *p_demux, mp4_track_t *p_track, MP4_Box_t *p_sample )
         }
 
         case ATOM_in24:
+            p_track->fmt.i_original_fourcc =
             p_track->fmt.i_codec = p_enda && BOXDATA(p_enda)->i_little_endian == 1 ?
                                     VLC_CODEC_S24L : VLC_CODEC_S24B;
             break;
         case ATOM_in32:
+            p_track->fmt.i_original_fourcc =
             p_track->fmt.i_codec = p_enda && BOXDATA(p_enda)->i_little_endian == 1 ?
                                     VLC_CODEC_S32L : VLC_CODEC_S32B;
             break;
         case ATOM_fl32:
+            p_track->fmt.i_original_fourcc =
             p_track->fmt.i_codec = p_enda && BOXDATA(p_enda)->i_little_endian == 1 ?
                                     VLC_CODEC_F32L : VLC_CODEC_F32B;
             break;
         case ATOM_fl64:
+            p_track->fmt.i_original_fourcc =
             p_track->fmt.i_codec = p_enda && BOXDATA(p_enda)->i_little_endian == 1 ?
                                     VLC_CODEC_F64L : VLC_CODEC_F64B;
             break;
@@ -1206,7 +1256,7 @@ int SetupAudioES( demux_t *p_demux, mp4_track_t *p_track, MP4_Box_t *p_sample )
              * as vlc can't enumerate channels for compressed content */
             if( i_bps || p_track->rgi_chans_reordering == NULL )
             {
-                p_track->fmt.audio.i_channels = i_channels;
+                p_track->fmt.audio.i_channels = vlc_popcount(i_vlc_mapping);
                 p_track->fmt.audio.i_physical_channels = i_vlc_mapping;
             }
         }

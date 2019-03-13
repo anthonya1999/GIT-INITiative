@@ -938,9 +938,7 @@ static bool OggCreateHeaders( sout_mux_t *p_mux )
     block_t *p_hdr = NULL;
     block_t *p_og = NULL;
     ogg_packet op;
-    ogg_stream_t *p_stream;
     sout_mux_sys_t *p_sys = p_mux->p_sys;
-    int i;
 
     if( sout_AccessOutControl( p_mux->p_access,
                                ACCESS_OUT_CAN_SEEK,
@@ -960,8 +958,8 @@ static bool OggCreateHeaders( sout_mux_t *p_mux )
     {
         for ( int i=0; i< p_mux->i_nb_inputs; i++ )
         {
-            p_stream = (ogg_stream_t*) p_mux->pp_inputs[i]->p_sys;
-            if ( p_stream->p_oggds_header )
+            ogg_stream_t *p_stream = p_mux->pp_inputs[i]->p_sys;
+            if( p_stream->p_oggds_header )
             {
                 /* We don't want skeleton for OggDS */
                 p_sys->skeleton.b_create = false;
@@ -996,10 +994,10 @@ static bool OggCreateHeaders( sout_mux_t *p_mux )
      * must appear first in the ogg stream so we take care of them first. */
     for( int pass = 0; pass < 2; pass++ )
     {
-        for( i = 0; i < p_mux->i_nb_inputs; i++ )
+        for( int i = 0; i < p_mux->i_nb_inputs; i++ )
         {
             sout_input_t *p_input = p_mux->pp_inputs[i];
-            p_stream = (ogg_stream_t*)p_input->p_sys;
+            ogg_stream_t *p_stream = p_input->p_sys;
 
             bool video = ( p_stream->fmt.i_codec == VLC_CODEC_THEORA ||
                            p_stream->fmt.i_codec == VLC_CODEC_DIRAC ||
@@ -1115,10 +1113,10 @@ static bool OggCreateHeaders( sout_mux_t *p_mux )
     /* Create fisbones if any */
     if ( p_sys->skeleton.b_create )
     {
-        for( i = 0; i < p_mux->i_nb_inputs; i++ )
+        for( int i = 0; i < p_mux->i_nb_inputs; i++ )
         {
             sout_input_t *p_input = p_mux->pp_inputs[i];
-            ogg_stream_t *p_stream = (ogg_stream_t*)p_input->p_sys;
+            ogg_stream_t *p_stream = p_input->p_sys;
             if ( p_stream->skeleton.b_fisbone_done ) continue;
             OggGetSkeletonFisbone( &op.packet, &op.bytes, p_input, p_mux );
             if ( op.packet == NULL ) return false;
@@ -1144,7 +1142,7 @@ static bool OggCreateHeaders( sout_mux_t *p_mux )
     p_hdr = NULL;
 
     /* Create indexes if any */
-    for( i = 0; i < p_mux->i_nb_inputs; i++ )
+    for( int i = 0; i < p_mux->i_nb_inputs; i++ )
     {
         sout_input_t *p_input = p_mux->pp_inputs[i];
         ogg_stream_t *p_stream = (ogg_stream_t*)p_input->p_sys;
@@ -1177,7 +1175,7 @@ static bool OggCreateHeaders( sout_mux_t *p_mux )
     }
 
     /* Take care of the non b_o_s headers */
-    for( i = 0; i < p_mux->i_nb_inputs; i++ )
+    for( int i = 0; i < p_mux->i_nb_inputs; i++ )
     {
         sout_input_t *p_input = p_mux->pp_inputs[i];
         ogg_stream_t *p_stream = (ogg_stream_t*)p_input->p_sys;
@@ -1197,11 +1195,11 @@ static bool OggCreateHeaders( sout_mux_t *p_mux )
 
             /* Special case, headers are already there in the incoming stream.
              * We need to gather them an mark them as headers. */
-            for( unsigned i = 1; i < i_count; i++ )
+            for( unsigned j = 1; j < i_count; j++ )
             {
-                op.bytes  = pi_size[i];
-                op.packet = pp_data[i];
-                if( pi_size[i] <= 0 )
+                op.bytes  = pi_size[j];
+                op.packet = pp_data[j];
+                if( pi_size[j] <= 0 )
                     msg_Err( p_mux, "header data corrupted");
 
                 op.b_o_s  = 0;
@@ -1210,7 +1208,7 @@ static bool OggCreateHeaders( sout_mux_t *p_mux )
                 op.packetno = p_stream->i_packet_no++;
                 ogg_stream_packetin( &p_stream->os, &op );
                 msg_Dbg( p_mux, "adding non bos, secondary header" );
-                if( i == i_count - 1 )
+                if( j == i_count - 1 )
                     p_og = OggStreamFlush( p_mux, &p_stream->os, 0 );
                 else
                     p_og = OggStreamPageOut( p_mux, &p_stream->os, 0 );
@@ -1422,7 +1420,7 @@ static void OggRewriteFisheadPage( sout_mux_t *p_mux )
 
 static bool AllocateIndex( sout_mux_t *p_mux, sout_input_t *p_input )
 {
-    sout_mux_sys_t *p_sys = p_mux;
+    sout_mux_sys_t *p_sys = p_mux->p_sys;
     ogg_stream_t *p_stream = (ogg_stream_t *) p_input->p_sys;
     size_t i_size;
 

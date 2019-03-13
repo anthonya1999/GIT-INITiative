@@ -296,27 +296,19 @@ typedef enum input_state_e
  * Input rate.
  *
  * It is an float used by the variable "rate" in the
- * range [INPUT_RATE_DEFAULT/INPUT_RATE_MAX, INPUT_RATE_DEFAULT/INPUT_RATE_MIN]
- * the default value being 1. It represents the ratio of playback speed to
+ * range [INPUT_RATE_MIN, INPUT_RATE_MAX]
+ * the default value being 1.f. It represents the ratio of playback speed to
  * nominal speed (bigger is faster).
- *
- * Internally, the rate is stored as a value in the range
- * [INPUT_RATE_MIN, INPUT_RATE_MAX].
- * internal rate = INPUT_RATE_DEFAULT / rate variable
  */
 
 /**
- * Default rate value
- */
-#define INPUT_RATE_DEFAULT  1000
-/**
  * Minimal rate value
  */
-#define INPUT_RATE_MIN        32            /* Up to 32/1 */
+#define INPUT_RATE_MIN 0.03125f
 /**
  * Maximal rate value
  */
-#define INPUT_RATE_MAX     32000            /* Up to 1/32 */
+#define INPUT_RATE_MAX 31.25f
 
 /**
  * Input events
@@ -421,7 +413,7 @@ struct vlc_input_event_title
     {
         struct
         {
-            const input_title_t **array;
+            input_title_t *const *array;
             size_t count;
         } list;
         size_t selected_idx;
@@ -585,7 +577,7 @@ enum input_query_e
     INPUT_SET_INITIAL_VIEWPOINT, /* arg1=(const vlc_viewpoint_t*) */
 
     /* Input ressources
-     * XXX You must call vlc_object_release as soon as possible */
+     * XXX You must release as soon as possible */
     INPUT_GET_AOUT,         /* arg1=audio_output_t **              res=can fail */
     INPUT_GET_VOUTS,        /* arg1=vout_thread_t ***, size_t *        res=can fail */
     INPUT_GET_ES_OBJECTS,   /* arg1=int id, vlc_object_t **dec, vout_thread_t **, audio_output_t ** */
@@ -605,9 +597,9 @@ enum input_query_e
  *****************************************************************************/
 VLC_API input_thread_t * input_Create( vlc_object_t *p_parent,
                                        input_thread_events_cb event_cb, void *events_data,
-                                       input_item_t *, const char *psz_log, input_resource_t *,
+                                       input_item_t *, input_resource_t *,
                                        vlc_renderer_item_t* p_renderer ) VLC_USED;
-#define input_Create(a,b,c,d,e,f,g) input_Create(VLC_OBJECT(a),b,c,d,e,f,g)
+#define input_Create(a,b,c,d,e,f) input_Create(VLC_OBJECT(a),b,c,d,e,f)
 
 
 /**
@@ -665,7 +657,7 @@ VLC_API input_item_t* input_GetItem( input_thread_t * ) VLC_USED;
  * INPUT_GET_VOUTS directly and process _all_ video outputs instead.
  * @param p_input an input thread from which to get a video output
  * @return NULL on error, or a video output thread pointer (which needs to be
- * released with vlc_object_release()).
+ * released with vout_Release()).
  */
 static inline vout_thread_t *input_GetVout( input_thread_t *p_input )
 {
@@ -676,7 +668,7 @@ static inline vout_thread_t *input_GetVout( input_thread_t *p_input )
          return NULL;
 
      for( size_t i = 1; i < i_vout; i++ )
-         vlc_object_release( (vlc_object_t *)(pp_vout[i]) );
+         vout_Release(pp_vout[i]);
 
      p_vout = (i_vout >= 1) ? pp_vout[0] : NULL;
      free( pp_vout );
@@ -713,7 +705,7 @@ static inline int input_UpdateViewpoint( input_thread_t *p_input,
  * Return the audio output (if any) associated with an input.
  * @param p_input an input thread
  * @return NULL on error, or the audio output (which needs to be
- * released with vlc_object_release()).
+ * released with aout_Release()).
  */
 static inline audio_output_t *input_GetAout( input_thread_t *p_input )
 {
@@ -724,8 +716,8 @@ static inline audio_output_t *input_GetAout( input_thread_t *p_input )
 /**
  * Returns the objects associated to an ES.
  *
- * You must release all non NULL object using vlc_object_release.
- * You may set pointer of pointer to NULL to avoid retreiving it.
+ * You must release all non-NULL objects.
+ * You may set pointer of pointer to NULL to avoid retrieving it.
  */
 static inline int input_GetEsObjects( input_thread_t *p_input, int i_id,
                                       vlc_object_t **pp_decoder,
@@ -790,7 +782,7 @@ VLC_API void input_resource_Terminate( input_resource_t * );
 
 /**
  * \return the current audio output if any.
- * Use vlc_object_release() to drop the reference.
+ * Use aout_Release() to drop the reference.
  */
 VLC_API audio_output_t *input_resource_HoldAout( input_resource_t * );
 

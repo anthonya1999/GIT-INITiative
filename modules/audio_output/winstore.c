@@ -214,6 +214,7 @@ static int aout_stream_Start(void *func, va_list ap)
     audio_sample_format_t *fmt = va_arg(ap, audio_sample_format_t *);
     HRESULT *hr = va_arg(ap, HRESULT *);
 
+    (void) forced;
     *hr = start(s, fmt, &GUID_VLC_AUD_OUT);
     return SUCCEEDED(*hr) ? VLC_SUCCESS : VLC_EGENERIC;
 }
@@ -245,7 +246,7 @@ static int Start(audio_output_t *aout, audio_sample_format_t *restrict fmt)
 
     if (sys->module == NULL)
     {
-        vlc_object_release(s);
+        vlc_object_delete(s);
         return -1;
     }
 
@@ -261,10 +262,10 @@ static void Stop(audio_output_t *aout)
     assert (sys->stream != NULL);
 
     EnterMTA();
-    vlc_module_unload(sys->stream, sys->module, aout_stream_Stop, sys->stream);
+    vlc_module_unload(sys->module, aout_stream_Stop, sys->stream);
     LeaveMTA();
 
-    vlc_object_release(sys->stream);
+    vlc_object_delete(sys->stream);
     sys->stream = NULL;
 }
 
@@ -273,13 +274,14 @@ static int DeviceSelect(audio_output_t *aout, const char* psz_device)
     if( psz_device == NULL )
         return VLC_EGENERIC;
     char* psz_end;
+    aout_sys_t* sys = aout->sys;
     intptr_t ptr = strtoll( psz_device, &psz_end, 16 );
     if ( *psz_end != 0 )
         return VLC_EGENERIC;
-    if (aout->sys->client == (IAudioClient*)ptr)
+    if (sys->client == (IAudioClient*)ptr)
         return VLC_SUCCESS;
-    aout->sys->client = (IAudioClient*)ptr;
-    var_SetAddress( aout->obj.parent, "winstore-client", aout->sys->client );
+    sys->client = (IAudioClient*)ptr;
+    var_SetAddress( vlc_object_parent(aout), "winstore-client", sys->client );
     aout_RestartRequest( aout, AOUT_RESTART_OUTPUT );
     return VLC_SUCCESS;
 }
@@ -294,9 +296,9 @@ static int Open(vlc_object_t *obj)
 
     aout->sys = sys;
     sys->stream = NULL;
-    aout->sys->client = var_CreateGetAddress( aout->obj.parent, "winstore-client" );
-    if (aout->sys->client != NULL)
-        msg_Dbg( aout, "Reusing previous client: %p", aout->sys->client );
+    sys->client = var_CreateGetAddress( vlc_object_parent(aout), "winstore-client" );
+    if (sys->client != NULL)
+        msg_Dbg( aout, "Reusing previous client: %p", sys->client );
     aout->start = Start;
     aout->stop = Stop;
     aout->time_get = TimeGet;

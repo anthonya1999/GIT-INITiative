@@ -468,7 +468,7 @@ static void SSE_CopyPlane(uint8_t *dst, size_t dst_pitch,
     const size_t copy_pitch = __MIN(src_pitch, dst_pitch);
     const unsigned w16 = (copy_pitch+15) & ~15;
     const unsigned hstep = cache_size / w16;
-    const unsigned cache_width = __MIN(src_pitch, hstep);
+    const unsigned cache_width = __MIN(src_pitch, cache_size);
     assert(hstep > 0);
 
     /* If SSE4.1: CopyFromUswc is faster than memcpy */
@@ -501,8 +501,8 @@ SSE_InterleavePlanes(uint8_t *dst, size_t dst_pitch,
     size_t copy_pitch = __MIN(dst_pitch / 2, srcu_pitch);
     unsigned int const  w16 = (srcu_pitch+15) & ~15;
     unsigned int const  hstep = (cache_size) / (2*w16);
-    const unsigned cacheu_width = __MIN(srcu_pitch, hstep);
-    const unsigned cachev_width = __MIN(srcv_pitch, hstep);
+    const unsigned cacheu_width = __MIN(srcu_pitch, cache_size);
+    const unsigned cachev_width = __MIN(srcv_pitch, cache_size);
     assert(hstep > 0);
 
     for (unsigned int y = 0; y < height; y += hstep)
@@ -535,7 +535,7 @@ static void SSE_SplitPlanes(uint8_t *dstu, size_t dstu_pitch,
     size_t copy_pitch = __MIN(__MIN(src_pitch / 2, dstu_pitch), dstv_pitch);
     const unsigned w16 = (src_pitch+15) & ~15;
     const unsigned hstep = cache_size / w16;
-    const unsigned cache_width = __MIN(src_pitch, hstep);
+    const unsigned cache_width = __MIN(src_pitch, cache_size);
     assert(hstep > 0);
 
     for (unsigned y = 0; y < height; y += hstep) {
@@ -831,7 +831,9 @@ void Copy420_P_to_SP(picture_t *dst, const uint8_t *src[static 3],
               src[0], src_pitch[0], height, 0);
 
     const unsigned copy_lines = (height+1) / 2;
-    const unsigned copy_pitch = __MIN(src_pitch[1], dst->p[1].i_pitch / 2);
+    unsigned copy_pitch = src_pitch[1];
+    if (copy_pitch > (size_t)dst->p[1].i_pitch / 2)
+        copy_pitch = dst->p[1].i_pitch / 2;
 
     const int i_extra_pitch_uv = dst->p[1].i_pitch - 2 * copy_pitch;
     const int i_extra_pitch_u  = src_pitch[U_PLANE] - copy_pitch;

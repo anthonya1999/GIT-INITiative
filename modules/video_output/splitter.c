@@ -128,7 +128,7 @@ static void vlc_vidsplit_Close(vout_display_t *vd)
     module_unneed(&sys->splitter, sys->splitter.p_module);
     video_format_Clean(&sys->splitter.fmt);
     vlc_mutex_destroy(&sys->lock);
-    vlc_object_release(&sys->splitter);
+    vlc_object_delete(&sys->splitter);
 }
 
 static void vlc_vidsplit_window_Resized(vout_window_t *wnd,
@@ -163,7 +163,7 @@ static void vlc_vidsplit_window_MouseEvent(vout_window_t *wnd,
                                            const vout_window_mouse_event_t *e)
 {
     struct vlc_vidsplit_part *part = wnd->owner.sys;
-    vout_display_t *vd = (vout_display_t *)wnd->obj.parent;
+    vout_display_t *vd = (vout_display_t *)vlc_object_parent(wnd);
     vout_display_sys_t *sys = vd->sys;
     vout_window_mouse_event_t ev = *e;
 
@@ -176,7 +176,7 @@ static void vlc_vidsplit_window_MouseEvent(vout_window_t *wnd,
 
 static void vlc_vidsplit_window_KeyboardEvent(vout_window_t *wnd, unsigned key)
 {
-    vout_display_t *vd = (vout_display_t *)wnd->obj.parent;
+    vout_display_t *vd = (vout_display_t *)vlc_object_parent(wnd);
     vout_display_sys_t *sys = vd->sys;
 
     vlc_mutex_lock(&sys->lock);
@@ -257,7 +257,7 @@ static int vlc_vidsplit_Open(vout_display_t *vd,
     if (splitter->p_module == NULL) {
         video_format_Clean(&splitter->fmt);
         vlc_mutex_destroy(&sys->lock);
-        vlc_object_release(splitter);
+        vlc_object_delete(splitter);
         return VLC_EGENERIC;
     }
 

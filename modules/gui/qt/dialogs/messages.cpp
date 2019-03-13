@@ -137,16 +137,17 @@ MessagesDialog::MessagesDialog( intf_thread_t *_p_intf)
         MessagesDialog::MsgCallback,
         NULL
     };
+    libvlc_int_t *vlc = vlc_object_instance(p_intf);
 
-    vlc_LogSet( p_intf->obj.libvlc, &log_ops, this );
+    vlc_LogSet( vlc, &log_ops, this );
 
-    buildTree( NULL, VLC_OBJECT( p_intf->obj.libvlc ) );
+    buildTree( NULL, VLC_OBJECT(vlc) );
 }
 
 MessagesDialog::~MessagesDialog()
 {
     saveWidgetPosition( "Messages" );
-    vlc_LogSet( p_intf->obj.libvlc, NULL, NULL );
+    vlc_LogSet( vlc_object_instance(p_intf), NULL, NULL );
 };
 
 void MessagesDialog::changeVerbosity( int i_verbosity )
@@ -303,7 +304,7 @@ void MessagesDialog::buildTree( QTreeWidgetItem *parentItem,
 
     char *name = vlc_object_get_name( p_obj );
     item->setText( 0, QString("%1%2 (0x%3)")
-                   .arg( qfu( p_obj->obj.object_type ) )
+                   .arg( qfu( vlc_object_typename(p_obj) ) )
                    .arg( ( name != NULL )
                          ? QString( " \"%1\"" ).arg( qfu( name ) )
                              : "" )
@@ -338,7 +339,7 @@ void MessagesDialog::updateOrClear()
     if( ui.mainTab->currentIndex() == 1)
     {
         ui.modulesTree->clear();
-        buildTree( NULL, VLC_OBJECT( p_intf->obj.libvlc ) );
+        buildTree( NULL, VLC_OBJECT( vlc_object_instance(p_intf) ) );
     }
     else if( ui.mainTab->currentIndex() == 0 )
         ui.messages->clear();

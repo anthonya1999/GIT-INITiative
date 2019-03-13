@@ -427,18 +427,19 @@ static int D3dCreateDevice(vlc_va_t *va)
     }
 
 #if VLC_WINSTORE_APP
-    sys->d3d_dev.d3dcontext = var_InheritInteger(va, "winrt-d3dcontext");
-    if (likely(sys->d3d_dev.d3dcontext))
+    if (sys->d3d_dev.d3dcontext == NULL)
+        sys->d3d_dev.d3dcontext = var_InheritInteger(va, "winrt-d3dcontext"); /* LEGACY */
+#endif
+    if (sys->d3d_dev.d3dcontext != NULL)
     {
         ID3D11Device* d3ddevice = NULL;
         ID3D11DeviceContext_GetDevice(sys->d3d_dev.d3dcontext, &sys->d3d_dev.d3ddevice);
         ID3D11DeviceContext_AddRef(sys->d3d_dev.d3dcontext);
         ID3D11Device_Release(sys->d3d_dev.d3ddevice);
     }
-#endif
 
     /* */
-    if (!sys->d3d_dev.d3ddevice)
+    else
     {
         hr = D3D11_CreateDevice(va, &sys->hd3d, NULL, true, &sys->d3d_dev);
         if (FAILED(hr)) {
@@ -776,7 +777,7 @@ static int DxCreateDecoderSurfaces(vlc_va_t *va, int codec_id,
 #if !D3D11_DIRECT_DECODE
         size_t surface_idx;
         for (surface_idx = 0; surface_idx < surface_count; surface_idx++) {
-            picture_t *pic = decoder_NewPicture( (decoder_t*) va->obj.parent );
+            picture_t *pic = decoder_NewPicture( (decoder_t*) vlc_object_parent(va) );
             sys->extern_pics[surface_idx] = pic;
             dx_sys->hw_surface[surface_idx] = NULL;
             if (pic==NULL)

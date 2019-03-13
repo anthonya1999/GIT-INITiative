@@ -84,7 +84,7 @@ vlc_object_t * vlclua_get_this( lua_State *L )
 int vlclua_push_ret( lua_State *L, int i_error )
 {
     lua_pushnumber( L, i_error );
-    lua_pushstring( L, vlc_error( i_error ) );
+    lua_pushstring( L, vlc_error_string( i_error ) );
     return 2;
 }
 
@@ -123,7 +123,7 @@ static int vlclua_quit( lua_State *L )
     vlc_object_t *p_this = vlclua_get_this( L );
     /* The rc.c code also stops the playlist ... not sure if this is needed
      * though. */
-    libvlc_Quit( p_this->obj.libvlc );
+    libvlc_Quit( vlc_object_instance(p_this) );
     return 0;
 }
 

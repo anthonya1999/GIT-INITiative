@@ -222,7 +222,7 @@ ReleaseObject(void *obj)
 #ifdef TEST_MEDIA_SOURCE
     free(obj);
 #else
-    vlc_object_release((vlc_object_t *) obj);
+    vlc_object_delete((vlc_media_source_provider_t *)obj);
 #endif
 }
 
@@ -267,7 +267,9 @@ vlc_media_source_provider_GetMediaSource(vlc_media_source_provider_t *provider,
 {
     vlc_mutex_lock(&provider->lock);
     vlc_media_source_t *ms = vlc_media_source_provider_Find(provider, name);
-    if (!ms)
+    if (ms)
+        vlc_media_source_Hold(ms);
+    else
         ms = vlc_media_source_provider_Add(provider, name);
     vlc_mutex_unlock(&provider->lock);
 

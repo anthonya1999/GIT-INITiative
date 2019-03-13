@@ -37,7 +37,6 @@
 #include "input_internal.h"
 #include "event.h"
 #include "es_out.h"
-#include "es_out_timeshift.h"
 #include "demux.h"
 #include "item.h"
 #include "resource.h"
@@ -62,7 +61,7 @@ static  void *Run( void * );
 static  void *Preparse( void * );
 
 static input_thread_t * Create  ( vlc_object_t *, input_thread_events_cb, void *,
-                                  input_item_t *, const char *, bool, bool,
+                                  input_item_t *, bool, bool,
                                   input_resource_t *, vlc_renderer_item_t * );
 static  int             Init    ( input_thread_t *p_input );
 static void             End     ( input_thread_t *p_input );
@@ -120,17 +119,16 @@ static void input_ChangeState( input_thread_t *p_input, int i_state ); /* TODO f
  *
  * \param p_parent a vlc_object
  * \param p_item an input item
- * \param psz_log an optional prefix for this input logs
  * \param p_resource an optional input ressource
  * \return a pointer to the spawned input thread
  */
 input_thread_t *input_Create( vlc_object_t *p_parent,
                               input_thread_events_cb events_cb, void *events_data,
                               input_item_t *p_item,
-                              const char *psz_log, input_resource_t *p_resource,
+                              input_resource_t *p_resource,
                               vlc_renderer_item_t *p_renderer )
 {
-    return Create( p_parent, events_cb, events_data, p_item, psz_log, false,
+    return Create( p_parent, events_cb, events_data, p_item, false,
                    false, p_resource, p_renderer );
 }
 
@@ -146,7 +144,7 @@ int input_Read( vlc_object_t *p_parent, input_item_t *p_item,
                 input_thread_events_cb events_cb, void *events_data )
 {
     input_thread_t *p_input = Create( p_parent, events_cb, events_data, p_item,
-                                      NULL, false, false, NULL, NULL );
+                                      false, false, NULL, NULL );
     if( !p_input )
         return VLC_EGENERIC;
 
@@ -156,7 +154,7 @@ int input_Read( vlc_object_t *p_parent, input_item_t *p_item,
         End( p_input );
     }
 
-    vlc_object_release( p_input );
+    input_Close(p_input);
     return VLC_SUCCESS;
 }
 
@@ -164,14 +162,14 @@ input_thread_t *input_CreatePreparser( vlc_object_t *parent,
                                        input_thread_events_cb events_cb,
                                        void *events_data, input_item_t *item )
 {
-    return Create( parent, events_cb, events_data, item, NULL, true, false, NULL, NULL );
+    return Create( parent, events_cb, events_data, item, true, false, NULL, NULL );
 }
 
 input_thread_t *input_CreateThumbnailer(vlc_object_t *obj,
                                         input_thread_events_cb events_cb,
                                         void *events_data, input_item_t *item)
 {
-    return Create( obj, events_cb, events_data, item, NULL, false, true, NULL, NULL );
+    return Create( obj, events_cb, events_data, item, false, true, NULL, NULL );
 }
 
 /**
@@ -234,7 +232,7 @@ void input_Close( input_thread_t *p_input )
     if( input_priv(p_input)->is_running )
         vlc_join( input_priv(p_input)->thread, NULL );
     vlc_interrupt_deinit( &input_priv(p_input)->interrupt );
-    vlc_object_release( p_input );
+    vlc_object_delete(p_input);
 }
 
 void input_SetTime( input_thread_t *p_input, vlc_tick_t i_time, bool b_fast )
@@ -313,7 +311,7 @@ input_item_t *input_GetItem( input_thread_t *p_input )
  *****************************************************************************/
 static input_thread_t *Create( vlc_object_t *p_parent,
                                input_thread_events_cb events_cb, void *events_data,
-                               input_item_t *p_item, const char *psz_header,
+                               input_item_t *p_item,
                                bool b_preparsing, bool b_thumbnailing,
                                input_resource_t *p_resource,
                                vlc_renderer_item_t *p_renderer )
@@ -335,8 +333,6 @@ static input_thread_t *Create( vlc_object_t *p_parent,
     /* Parse input options */
     input_item_ApplyOptions( VLC_OBJECT(p_input), p_item );
 
-    p_input->obj.header = psz_header ? strdup( psz_header ) : NULL;
-
     /* Init Common fields */
     priv->events_cb = events_cb;
     priv->events_data = events_data;
@@ -353,7 +349,7 @@ static input_thread_t *Create( vlc_object_t *p_parent,
     priv->is_stopped = false;
     priv->b_recording = false;
     priv->b_thumbnailing = b_thumbnailing;
-    priv->i_rate = INPUT_RATE_DEFAULT;
+    priv->rate = 1.f;
     memset( &priv->bookmark, 0, sizeof(priv->bookmark) );
     TAB_INIT( priv->i_bookmark, priv->pp_bookmark );
     TAB_INIT( priv->i_attachment, priv->attachment );
@@ -402,17 +398,20 @@ static input_thread_t *Create( vlc_object_t *p_parent,
             p_item->i_preparse_depth = -1;
     }
     else
-        p_input->obj.flags |= OBJECT_FLAGS_QUIET | OBJECT_FLAGS_NOINTERACT;
+    {
+        p_input->obj.logger = NULL;
+        p_input->obj.no_interact = true;
+    }
 
     /* Make sure the interaction option is honored */
     if( !var_InheritBool( p_input, "interact" ) )
-        p_input->obj.flags |= OBJECT_FLAGS_NOINTERACT;
+        p_input->obj.no_interact = true;
     else if( p_item->b_preparse_interact )
     {
         /* If true, this item was asked explicitly to interact with the user
          * (via libvlc_MetadataRequest). Sub items created from this input won't
          * have this flag and won't interact with the user */
-        p_input->obj.flags &= ~OBJECT_FLAGS_NOINTERACT;
+        p_input->obj.no_interact = false;
     }
 
     vlc_mutex_unlock( &p_item->lock );
@@ -509,7 +508,7 @@ static input_thread_t *Create( vlc_object_t *p_parent,
     else
         priv->stats = NULL;
 
-    priv->p_es_out_display = input_EsOutNew( p_input, priv->i_rate );
+    priv->p_es_out_display = input_EsOutNew( p_input, priv->rate );
     priv->p_es_out = NULL;
 
     /* Set the destructor when we are sure we are initialized */
@@ -1009,9 +1008,9 @@ static void RequestSubRate( input_thread_t *p_input, float f_slave_fps )
     input_thread_private_t *priv = input_priv(p_input);
     const float f_fps = input_priv(p_input)->master->f_fps;
     if( f_fps > 1.f && f_slave_fps > 1.f )
-        priv->i_slave_subs_rate = INPUT_RATE_DEFAULT / ( f_fps / f_slave_fps );
-    else if ( priv->i_slave_subs_rate != 0 )
-        priv->i_slave_subs_rate = INPUT_RATE_DEFAULT;
+        priv->slave_subs_rate = f_fps / f_slave_fps;
+    else if ( priv->slave_subs_rate != 0 )
+        priv->slave_subs_rate = 1.f;
 }
 
 static void SetSubtitlesOptions( input_thread_t *p_input )
@@ -1338,7 +1337,7 @@ static int Init( input_thread_t * p_input )
     input_ChangeState( p_input, OPENING_S );
     input_SendEventCache( p_input, 0.0 );
 
-    if( var_Type( p_input->obj.parent, "meta-file" ) )
+    if( var_Type( vlc_object_parent(p_input), "meta-file" ) )
     {
         msg_Dbg( p_input, "Input is a meta file: disabling unneeded options" );
         var_SetString( p_input, "sout", "" );
@@ -1355,8 +1354,7 @@ static int Init( input_thread_t * p_input )
 #endif
 
     /* Create es out */
-    priv->p_es_out = input_EsOutTimeshiftNew( p_input, priv->p_es_out_display,
-                                              priv->i_rate );
+    priv->p_es_out = input_EsOutTimeshiftNew( p_input, priv->p_es_out_display, priv->rate );
     if( priv->p_es_out == NULL )
         goto error;
 
@@ -1389,7 +1387,7 @@ static int Init( input_thread_t * p_input )
         double f_rate = var_GetFloat( p_input, "rate" );
         if( f_rate != 0.0 && f_rate != 1.0 )
         {
-            vlc_value_t val = { .i_int = INPUT_RATE_DEFAULT / f_rate };
+            vlc_value_t val = { .f_float = f_rate };
             input_ControlPushHelper( p_input, INPUT_CONTROL_SET_RATE, &val );
         }
     }
@@ -1752,7 +1750,7 @@ static void ViewpointApply( input_thread_t *p_input )
         /* This variable can only be read from callbacks */
         var_Change( pp_vout[i], "viewpoint", VLC_VAR_SETVALUE,
                     (vlc_value_t) { .p_address = NULL } );
-        vlc_object_release( pp_vout[i] );
+        vout_Release(pp_vout[i]);
     }
     free( pp_vout );
 
@@ -1764,7 +1762,7 @@ static void ViewpointApply( input_thread_t *p_input )
         /* This variable can only be read from callbacks */
         var_Change( p_aout, "viewpoint", VLC_VAR_SETVALUE,
                     (vlc_value_t) { .p_address = NULL } );
-        vlc_object_release( p_aout );
+        aout_Release(p_aout);
     }
 }
 
@@ -1816,7 +1814,7 @@ static void ControlNav( input_thread_t *p_input, int i_type )
         if( !b_viewpoint_ch
          && var_GetBool( pp_vout[i], "viewpoint-changeable" ) )
             b_viewpoint_ch = true;
-        vlc_object_release( pp_vout[i] );
+        vout_Release(pp_vout[i]);
     }
     free( pp_vout );
 
@@ -1847,7 +1845,7 @@ static void ControlNav( input_thread_t *p_input, int i_type )
         if( p_aout )
         {
             aout_VolumeUpdate( p_aout, vol_direction, NULL );
-            vlc_object_release( p_aout );
+            aout_Release(p_aout);
         }
     }
 }
@@ -1999,19 +1997,19 @@ static bool Control( input_thread_t *p_input,
         case INPUT_CONTROL_SET_RATE:
         {
             /* Get rate and direction */
-            long long i_rate = llabs( param.val.i_int );
-            int i_rate_sign = param.val.i_int < 0 ? -1 : 1;
+            float rate = fabsf( param.val.f_float );
+            int i_rate_sign = rate < 0 ? -1 : 1;
 
             /* Check rate bound */
-            if( i_rate < INPUT_RATE_MIN )
+            if( rate > INPUT_RATE_MAX )
             {
-                msg_Dbg( p_input, "cannot set rate faster" );
-                i_rate = INPUT_RATE_MIN;
+                msg_Info( p_input, "cannot set rate faster" );
+                rate = INPUT_RATE_MAX;
             }
-            else if( i_rate > INPUT_RATE_MAX )
+            else if( rate < INPUT_RATE_MIN )
             {
-                msg_Dbg( p_input, "cannot set rate slower" );
-                i_rate = INPUT_RATE_MAX;
+                msg_Info( p_input, "cannot set rate slower" );
+                rate = INPUT_RATE_MIN;
             }
 
             /* Apply direction */
@@ -2020,46 +2018,46 @@ static bool Control( input_thread_t *p_input,
                 if( priv->master->b_rescale_ts )
                 {
                     msg_Dbg( p_input, "cannot set negative rate" );
-                    i_rate = priv->i_rate;
-                    assert( i_rate > 0 );
+                    rate = priv->rate;
+                    assert( rate > 0 );
                 }
                 else
                 {
-                    i_rate *= i_rate_sign;
+                    rate *= i_rate_sign;
                 }
             }
 
-            if( i_rate != INPUT_RATE_DEFAULT &&
+            if( rate != 1.f &&
                 ( ( !priv->b_can_rate_control && !priv->master->b_rescale_ts ) ||
                   ( priv->p_sout && !priv->b_out_pace_control ) ) )
             {
                 msg_Dbg( p_input, "cannot change rate" );
-                i_rate = INPUT_RATE_DEFAULT;
+                rate = 1.f;
             }
-            if( i_rate != priv->i_rate &&
+            if( rate != priv->rate &&
                 !priv->b_can_pace_control && priv->b_can_rate_control )
             {
                 if( !priv->master->b_rescale_ts )
                     es_out_Control( priv->p_es_out, ES_OUT_RESET_PCR );
 
                 if( demux_Control( priv->master->p_demux, DEMUX_SET_RATE,
-                                   &i_rate ) )
+                                   &rate ) )
                 {
                     msg_Warn( p_input, "ACCESS/DEMUX_SET_RATE failed" );
-                    i_rate = priv->i_rate;
+                    rate = priv->rate;
                 }
             }
 
             /* */
-            if( i_rate != priv->i_rate )
+            if( rate != priv->rate )
             {
-                priv->i_rate = i_rate;
-                input_SendEventRate( p_input, i_rate );
+                priv->rate = rate;
+                input_SendEventRate( p_input, rate );
 
                 if( priv->master->b_rescale_ts )
                 {
-                    const int i_rate_source = (priv->b_can_pace_control || priv->b_can_rate_control ) ? i_rate : INPUT_RATE_DEFAULT;
-                    es_out_SetRate( priv->p_es_out, i_rate_source, i_rate );
+                    const float rate_source = (priv->b_can_pace_control || priv->b_can_rate_control ) ? rate : 1.f;
+                    es_out_SetRate( priv->p_es_out, rate_source, rate );
                 }
 
                 b_force_update = true;
@@ -2866,7 +2864,7 @@ static void InputSourceMeta( input_thread_t *p_input,
         }
         module_unneed( p_demux, p_id3 );
     }
-    vlc_object_release( p_demux_meta );
+    vlc_object_delete(p_demux_meta);
 }
 
 
@@ -2890,16 +2888,16 @@ static void SlaveDemux( input_thread_t *p_input )
         if( in->b_eof )
             continue;
 
-        if( priv->i_slave_subs_rate != in->i_sub_rate )
+        if( priv->slave_subs_rate != in->sub_rate )
         {
             if( in->b_slave_sub && in->b_can_rate_control )
             {
-                if( in->i_sub_rate != 0 ) /* Don't reset when it's the first time */
+                if( in->sub_rate != 0 ) /* Don't reset when it's the first time */
                     es_out_Control( priv->p_es_out, ES_OUT_RESET_PCR );
-                int i_new_rate = priv->i_slave_subs_rate;
-                demux_Control( in->p_demux, DEMUX_SET_RATE, &i_new_rate );
+                float new_rate = priv->slave_subs_rate;
+                demux_Control( in->p_demux, DEMUX_SET_RATE, &new_rate );
             }
-            in->i_sub_rate = priv->i_slave_subs_rate;
+            in->sub_rate = priv->slave_subs_rate;
         }
 
 

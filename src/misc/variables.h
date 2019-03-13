@@ -37,7 +37,8 @@ typedef struct vlc_object_internals vlc_object_internals_t;
 struct vlc_object_internals
 {
     alignas (max_align_t) /* ensure vlc_externals() is maximally aligned */
-    char           *psz_name; /* given name */
+    vlc_object_t *parent; /**< Parent object (or NULL) */
+    const char *typename; /**< Object type human-readable name */
 
     /* Object variables */
     void           *var_root;
@@ -49,9 +50,7 @@ struct vlc_object_internals
     vlc_destructor_t pf_destructor;
 
     /* Objects tree structure */
-    struct vlc_list siblings;  /**< Siblings list node */
-    struct vlc_list children; /**< Children list */
-    vlc_mutex_t tree_lock;
+    struct vlc_list list; /**< Legacy list node */
 
     /* Object resources */
     struct vlc_res *resources;

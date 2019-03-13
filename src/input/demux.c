@@ -162,7 +162,7 @@ static void demux_DestroyDemux(demux_t *demux)
     vlc_stream_Delete(demux->s);
 }
 
-static int demux_Probe(void *func, va_list ap)
+static int demux_Probe(void *func, bool forced, va_list ap)
 {
     int (*probe)(vlc_object_t *) = func;
     demux_t *demux = va_arg(ap, demux_t *);
@@ -175,7 +175,12 @@ static int demux_Probe(void *func, va_list ap)
         return VLC_EGENERIC;
     }
 
-    return probe(VLC_OBJECT(demux));
+    demux->obj.force = forced;
+
+    int ret = probe(VLC_OBJECT(demux));
+    if (ret)
+        vlc_objres_clear(VLC_OBJECT(demux));
+    return ret;
 }
 
 demux_t *demux_NewAdvanced( vlc_object_t *p_obj, input_thread_t *p_input,
@@ -426,7 +431,7 @@ decoder_t *demux_PacketizerNew( demux_t *p_demux, es_format_t *p_fmt, const char
     if( !p_packetizer->p_module )
     {
         es_format_Clean( p_fmt );
-        vlc_object_release( p_packetizer );
+        vlc_object_delete(p_packetizer);
         msg_Err( p_demux, "cannot find packetizer for %s", psz_msg );
         return NULL;
     }
@@ -442,7 +447,7 @@ void demux_PacketizerDestroy( decoder_t *p_packetizer )
     es_format_Clean( &p_packetizer->fmt_out );
     if( p_packetizer->p_description )
         vlc_meta_Delete( p_packetizer->p_description );
-    vlc_object_release( p_packetizer );
+    vlc_object_delete(p_packetizer);
 }
 
 unsigned demux_TestAndClearFlags( demux_t *p_demux, unsigned flags )

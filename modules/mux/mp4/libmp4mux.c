@@ -97,6 +97,8 @@ static void mp4mux_AddExtraBrandForFormat(mp4mux_handle_t *h, const es_format_t 
             mp4mux_AddExtraBrand(h, BRAND_av01);
             mp4mux_AddExtraBrand(h, BRAND_iso6);
             break;
+        case VLC_CODEC_MP3:
+        case VLC_CODEC_MPGA:
         case VLC_CODEC_MP4V:
         case VLC_CODEC_DIV1:
         case VLC_CODEC_DIV2:
@@ -551,48 +553,50 @@ static bo_t *GetESDS(mp4mux_trackinfo_t *p_track)
     if (i_bitrate_max <= 1)
         i_bitrate_max = 0x7fffffff;
 
-    /* ES_Descr */
+    /* ES_Descriptor ISO/IEC 14496-1 */
     bo_add_mp4_tag_descr(esds, 0x03, 3 + 5 + 13 + i_decoder_specific_info_size + 5 + 1);
     bo_add_16be(esds, p_track->i_track_id);
     bo_add_8   (esds, 0x1f);      // flags=0|streamPriority=0x1f
 
-    /* DecoderConfigDescr */
+    /* DecoderConfigDescr ISO/IEC 14496-1
+        http://mp4ra.org/#/object_types */
     bo_add_mp4_tag_descr(esds, 0x04, 13 + i_decoder_specific_info_size);
 
-    int  i_object_type_indication;
+    uint8_t i_object_profile_indication;
     switch(p_track->fmt.i_codec)
     {
     case VLC_CODEC_MP4V:
-        i_object_type_indication = 0x20;
+        i_object_profile_indication = 0x20; /* Visual 14496-2 */
         break;
     case VLC_CODEC_MPGV:
         if(p_track->fmt.i_original_fourcc == VLC_CODEC_MP1V)
         {
-            i_object_type_indication = 0x6b;
+            i_object_profile_indication = 0x6a; /* Visual ISO/IEC 11172-2  */
             break;
         }
         /* fallthrough */
     case VLC_CODEC_MP2V:
         /* MPEG-I=0x6b, MPEG-II = 0x60 -> 0x65 */
-        i_object_type_indication = 0x65;
+        i_object_profile_indication = 0x61; /* Visual 13818-2 Main Profile */
         break;
     case VLC_CODEC_MP1V:
-        /* MPEG-I=0x6b, MPEG-II = 0x60 -> 0x65 */
-        i_object_type_indication = 0x6b;
+        i_object_profile_indication = 0x6a; /* Visual ISO/IEC 11172-2  */
         break;
     case VLC_CODEC_MP4A:
         /* FIXME for mpeg2-aac == 0x66->0x68 */
-        i_object_type_indication = 0x40;
+        i_object_profile_indication = 0x40; /* Audio 14496-3 */
         break;
+    case VLC_CODEC_MP3:
     case VLC_CODEC_MPGA:
-        i_object_type_indication =
-            p_track->fmt.audio.i_rate < 32000 ? 0x69 : 0x6b;
+        i_object_profile_indication =
+            p_track->fmt.audio.i_rate < 32000 ? 0x69 /* Audio 13818-3 */
+                                              : 0x6b;/* Audio 11172-3 */
         break;
     case VLC_CODEC_DTS:
-        i_object_type_indication = 0xa9;
+        i_object_profile_indication = 0xa9; /* Core Substream */
         break;
     default:
-        i_object_type_indication = 0xFE; /* No profile specified */
+        i_object_profile_indication = 0xFE; /* No profile specified */
         break;
     }
 
@@ -613,7 +617,7 @@ static bo_t *GetESDS(mp4mux_trackinfo_t *p_track)
             break;
     }
 
-    bo_add_8   (esds, i_object_type_indication);
+    bo_add_8   (esds, i_object_profile_indication);
     bo_add_8   (esds, (i_stream_type << 2) | 1);
     bo_add_24be(esds, 1024 * 1024);       // bufferSizeDB
     bo_add_32be(esds, i_bitrate_max);     // maxBitrate
@@ -1036,7 +1040,8 @@ static bo_t *GetSounBox(vlc_object_t *p_obj, mp4mux_trackinfo_t *p_track, bool b
     vlc_fourcc_t codec = p_track->fmt.i_codec;
     char fcc[4];
 
-    if (codec == VLC_CODEC_MPGA) {
+    if (codec == VLC_CODEC_MPGA ||
+        codec == VLC_CODEC_MP3) {
         if (b_mov) {
             b_descr = false;
             memcpy(fcc, ".mp3", 4);

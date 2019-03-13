@@ -332,7 +332,6 @@ enum vlc_player_subtitle_sync
  */
 enum vlc_vout_filter_type
 {
-    VLC_VOUT_FILTER_VIDEO_SPLITTER,
     VLC_VOUT_FILTER_VIDEO_FILTER,
     VLC_VOUT_FILTER_SUB_SOURCE,
     VLC_VOUT_FILTER_SUB_FILTER,
@@ -2447,9 +2446,28 @@ VLC_API void
 vlc_player_SetPauseOnCork(vlc_player_t *player, bool enabled);
 
 /**
+ * Get the V4L2 object used to do controls
+ *
+ * @param player locked player instance
+ * @return the V4L2 object or NULL if not any. This object must be used with
+ * the player lock held.
+ */
+VLC_API vlc_object_t *
+vlc_player_GetV4l2Object(vlc_player_t *player) VLC_DEPRECATED;
+
+/**
+ * Set a video splitter to the main vout
+ *
+ * @param player locked instance
+ * @param splitter a video splitter name or NULL
+ */
+VLC_API void
+vlc_player_SetVideoSplitter(vlc_player_t *player, const char *splitter);
+
+/**
  * Get the audio output
  *
- * @warning The returned pointer must be released with vlc_object_release().
+ * @warning The returned pointer must be released with aout_Release().
  *
  * @param player player instance
  * @return a valid audio_output_t * or NULL (if there is no aouts)
@@ -2592,8 +2610,7 @@ vlc_player_aout_EnableFilter(vlc_player_t *player, const char *name, bool add);
 /**
  * Get and hold the main video output
  *
- * @warning the returned vout_thread_t * must be released with
- * vlc_object_release().
+ * @warning the returned vout_thread_t * must be released with vout_Release().
  * @see vlc_players_cbs.on_vout_list_changed
  *
  * @param player player instance
@@ -2606,7 +2623,7 @@ vlc_player_vout_Hold(vlc_player_t *player);
  * Get and hold the list of video output
  *
  * @warning All vout_thread_t * element of the array must be released with
- * vlc_object_release(). The returned array must be freed.
+ * vout_Release(). The returned array must be freed.
  *
  * @see vlc_players_cbs.on_vout_list_changed
  *

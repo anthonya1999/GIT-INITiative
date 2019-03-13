@@ -420,7 +420,7 @@ static int Open( vlc_object_t *p_this, bool isDialogProvider )
 
     /* set up the playlist to work on */
     if( isDialogProvider )
-        p_sys->p_playlist = pl_Get( (intf_thread_t *)p_intf->obj.parent );
+        p_sys->p_playlist = pl_Get( (intf_thread_t *)vlc_object_parent(p_intf) );
     else
         p_sys->p_playlist = pl_Get( p_intf );
 
@@ -428,7 +428,7 @@ static int Open( vlc_object_t *p_this, bool isDialogProvider )
     vlc_sem_init (&ready, 0);
 #ifdef Q_OS_MAC
     /* Run mainloop on the main thread as Cocoa requires */
-    libvlc_SetExitHandler( p_intf->obj.libvlc, Abort, p_intf );
+    libvlc_SetExitHandler( vlc_object_instance(p_intf), Abort, p_intf );
     Thread( (void *)p_intf );
 #else
     if( vlc_clone( &p_sys->thread, Thread, p_intf, VLC_THREAD_PRIORITY_LOW ) )
@@ -577,7 +577,7 @@ static void *Thread( void *obj )
         QString platform = app.platformName();
         if( platform == qfu("xcb") )
             p_sys->voutWindowType = VOUT_WINDOW_TYPE_XID;
-        else if( platform == qfu("wayland") )
+        else if( platform == qfu("wayland") || platform == qfu("wayland-egl") )
             p_sys->voutWindowType = VOUT_WINDOW_TYPE_WAYLAND;
         else if( platform == qfu("windows") )
             p_sys->voutWindowType = VOUT_WINDOW_TYPE_HWND;

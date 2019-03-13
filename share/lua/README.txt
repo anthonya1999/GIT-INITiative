@@ -237,8 +237,6 @@ object.libvlc(): Get the libvlc object.
 object.aout(): Get the audio output object.
 object.vout(): Get the video output object.
 
-object.find( object, type, mode ): Return nil. DO NOT USE.
-
 OSD
 ---
 osd.icon( type, [id] ): Display an icon on the given OSD channel. Uses the
@@ -341,7 +339,6 @@ sd.get_services_names(): Get a table of all available service discovery
   modules. The module name is used as key, the long name is used as value.
 sd.add( name ): Add service discovery.
 sd.remove( name ): Remove service discovery.
-sd.is_loaded( name ): Check if service discovery is loaded.
 
 Services discovery scripts can use the following SD functions:
 

@@ -496,12 +496,7 @@ static void DeleteSoutStreamID( sout_stream_id_sys_t *id )
 {
     if( id )
     {
-        if( id->p_decoder )
-        {
-            es_format_Clean( &id->p_decoder->fmt_in );
-            es_format_Clean( &id->p_decoder->fmt_out );
-            vlc_object_release( id->p_decoder );
-        }
+        decoder_Destroy( id->p_decoder );
 
         vlc_mutex_destroy(&id->fifo.lock);
         free( id );
@@ -600,11 +595,9 @@ static void *Add( sout_stream_t *p_stream, const es_format_t *p_fmt )
     p_owner->p_obj = VLC_OBJECT(p_stream);
 
     id->p_decoder = &p_owner->dec;
-    id->p_decoder->p_module = NULL;
-    es_format_Init( &id->p_decoder->fmt_out, p_fmt->i_cat, 0 );
-    es_format_Copy( &id->p_decoder->fmt_in, p_fmt );
+    decoder_Init( id->p_decoder, p_fmt );
+
     es_format_SetMeta( &id->p_decoder->fmt_out, &id->p_decoder->fmt_in );
-    id->p_decoder->b_frame_drop_allowed = false;
 
     switch( p_fmt->i_cat )
     {

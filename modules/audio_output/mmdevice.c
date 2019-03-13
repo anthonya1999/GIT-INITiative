@@ -1095,7 +1095,7 @@ static HRESULT ActivateDevice(void *opaque, REFIID iid, PROPVARIANT *actparms,
     return IMMDevice_Activate(dev, iid, CLSCTX_ALL, actparms, pv);
 }
 
-static int aout_stream_Start(void *func, va_list ap)
+static int aout_stream_Start(void *func, bool forced, va_list ap)
 {
     aout_stream_start_t start = func;
     aout_stream_t *s = va_arg(ap, aout_stream_t *);
@@ -1103,6 +1103,7 @@ static int aout_stream_Start(void *func, va_list ap)
     HRESULT *hr = va_arg(ap, HRESULT *);
     LPCGUID sid = var_InheritBool(s, "volume-save") ? &GUID_VLC_AUD_OUT : NULL;
 
+    (void) forced;
     *hr = start(s, fmt, sid);
     if (*hr == AUDCLNT_E_DEVICE_INVALIDATED)
         return VLC_ETIMEOUT;
@@ -1156,7 +1157,7 @@ static int Start(audio_output_t *aout, audio_sample_format_t *restrict fmt)
          * failed. */
         LeaveCriticalSection(&sys->lock);
         LeaveMTA();
-        vlc_object_release(s);
+        vlc_object_delete(s);
         return -1;
     }
 
@@ -1224,7 +1225,7 @@ static int Start(audio_output_t *aout, audio_sample_format_t *restrict fmt)
 
     if (sys->module == NULL)
     {
-        vlc_object_release(s);
+        vlc_object_delete(s);
         return -1;
     }
 
@@ -1241,10 +1242,10 @@ static void Stop(audio_output_t *aout)
     assert(sys->stream != NULL);
 
     EnterMTA();
-    vlc_module_unload(sys->stream, sys->module, aout_stream_Stop, sys->stream);
+    vlc_module_unload(sys->module, aout_stream_Stop, sys->stream);
     LeaveMTA();
 
-    vlc_object_release(sys->stream);
+    vlc_object_delete(sys->stream);
     sys->stream = NULL;
 }
 

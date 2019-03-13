@@ -262,8 +262,10 @@ libvlccore_la_SOURCES = \
 	input/access.c \
 	clock/clock_internal.c \
 	clock/input_clock.c \
+	clock/clock.c \
 	input/control.c \
 	input/decoder.c \
+	input/decoder_helpers.c \
 	input/demux.c \
 	input/demux_chained.c \
 	input/es_out.c \
@@ -274,11 +276,11 @@ libvlccore_la_SOURCES = \
 	input/info.h \
 	input/meta.c \
 	clock/input_clock.h \
+	clock/clock.h \
 	clock/clock_internal.h \
 	input/decoder.h \
 	input/demux.h \
 	input/es_out.h \
-	input/es_out_timeshift.h \
 	input/event.h \
 	input/item.h \
 	input/mrl_helpers.h \
@@ -390,7 +392,8 @@ libvlccore_la_SOURCES = \
 	misc/sort.c \
 	misc/subpicture.c \
 	misc/subpicture.h \
-	misc/medialibrary.c
+	misc/medialibrary.c \
+	misc/viewpoint.c
 libvlccore_la_LIBADD = $(LIBS_libvlccore) \
 	../compat/libcompat.la \
 	$(LTLIBINTL) $(LTLIBICONV) \

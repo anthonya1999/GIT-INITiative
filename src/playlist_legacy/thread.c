@@ -205,6 +205,7 @@ static void on_input_event(input_thread_t *input,
  */
 static bool PlayItem( playlist_t *p_playlist, playlist_item_t *p_item )
 {
+    libvlc_int_t *vlc = vlc_object_instance(p_playlist);
     playlist_private_t *p_sys = pl_priv(p_playlist);
     input_item_t *p_input = p_item->p_input;
     vlc_renderer_item_t *p_renderer;
@@ -224,11 +225,11 @@ static bool PlayItem( playlist_t *p_playlist, playlist_item_t *p_item )
     assert( p_sys->p_input == NULL );
     PL_UNLOCK;
 
-    libvlc_MetadataCancel( p_playlist->obj.libvlc, p_item );
+    libvlc_MetadataCancel( vlc, p_item );
 
     input_thread_t *p_input_thread = input_Create( p_playlist,
                                                    on_input_event, p_playlist,
-                                                   p_input, NULL,
+                                                   p_input,
                                                    p_sys->p_input_resource,
                                                    p_renderer );
     if( p_renderer )
@@ -242,7 +243,7 @@ static bool PlayItem( playlist_t *p_playlist, playlist_item_t *p_item )
         {
             var_DelCallback( p_input_thread, "intf-event",
                              InputEvent, p_playlist );
-            vlc_object_release( p_input_thread );
+            input_Close(p_input_thread);
             p_input_thread = NULL;
         }
     }
@@ -255,7 +256,7 @@ static bool PlayItem( playlist_t *p_playlist, playlist_item_t *p_item )
     if( !b_has_art || strncmp( psz_arturl, "attachment://", 13 ) )
     {
         PL_DEBUG( "requesting art for new input thread" );
-        libvlc_ArtRequest( p_playlist->obj.libvlc, p_input, META_REQUEST_OPTION_NONE, NULL, NULL );
+        libvlc_ArtRequest( vlc, p_input, META_REQUEST_OPTION_NONE, NULL, NULL );
     }
     free( psz_arturl );
 
@@ -514,7 +515,7 @@ static void *Thread ( void *data )
         if( played && var_InheritBool( p_playlist, "play-and-exit" ) )
         {
             msg_Info( p_playlist, "end of playlist, exiting" );
-            libvlc_Quit( p_playlist->obj.libvlc );
+            libvlc_Quit( vlc_object_instance(p_playlist) );
         }
 
         /* Destroy any video display now (XXX: ugly hack) */

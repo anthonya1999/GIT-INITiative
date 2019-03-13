@@ -147,6 +147,7 @@ vlc_module_end ()
 static int Open( vlc_object_t *p_this )
 {
     intf_thread_t   *p_intf = (intf_thread_t*)p_this;
+    vlc_object_t *vlc = VLC_OBJECT(vlc_object_instance(p_this));
 
     /* initialisation of the connection */
     if( !dbus_threads_init_default() )
@@ -194,7 +195,7 @@ static int Open( vlc_object_t *p_this )
 
     /* Try to register org.mpris.MediaPlayer2.vlc */
     const unsigned bus_flags = DBUS_NAME_FLAG_DO_NOT_QUEUE;
-    var_Create(p_intf->obj.libvlc, "dbus-mpris-name", VLC_VAR_STRING);
+    var_Create(vlc, "dbus-mpris-name", VLC_VAR_STRING);
     if( dbus_bus_request_name( p_conn, DBUS_MPRIS_BUS_NAME, bus_flags, NULL )
                                      != DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER )
     {
@@ -212,15 +213,13 @@ static int Open( vlc_object_t *p_this )
                                      == DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER )
         {
             msg_Dbg( p_intf, "listening on dbus as: %s", unique_service );
-            var_SetString(p_intf->obj.libvlc, "dbus-mpris-name",
-                          unique_service);
+            var_SetString(vlc, "dbus-mpris-name", unique_service);
         }
     }
     else
     {
         msg_Dbg( p_intf, "listening on dbus as: %s", DBUS_MPRIS_BUS_NAME );
-        var_SetString(p_intf->obj.libvlc, "dbus-mpris-name",
-                      DBUS_MPRIS_BUS_NAME);
+        var_SetString(vlc, "dbus-mpris-name", DBUS_MPRIS_BUS_NAME);
     }
     dbus_connection_flush( p_conn );
 
@@ -264,7 +263,7 @@ static int Open( vlc_object_t *p_this )
     return VLC_SUCCESS;
 
 error:
-    var_Destroy(p_intf->obj.libvlc, "dbus-mpris-name");
+    var_Destroy(vlc, "dbus-mpris-name");
     /* The dbus connection is private,
      * so we are responsible for closing it
      * XXX: Does this make sense when OOM ? */
@@ -307,7 +306,7 @@ static void Close   ( vlc_object_t *p_this )
         var_DelCallback( p_sys->p_input, "intf-event", InputCallback, p_intf );
         var_DelCallback( p_sys->p_input, "can-pause", AllCallback, p_intf );
         var_DelCallback( p_sys->p_input, "can-seek", AllCallback, p_intf );
-        vlc_object_release( p_sys->p_input );
+        input_Release(p_sys->p_input);
     }
 
     /* The dbus connection is private, so we are responsible
@@ -593,7 +592,7 @@ static void ProcessEvents( intf_thread_t *p_intf,
             if( p_input )
             {
                 p_item = input_GetItem( p_input );
-                vlc_object_release( p_input );
+                input_Release(p_input);
 
                 if( p_item )
                     vlc_dictionary_insert( &player_properties,
@@ -1081,7 +1080,7 @@ static int TrackChange( intf_thread_t *p_intf )
         var_DelCallback( p_sys->p_input, "intf-event", InputCallback, p_intf );
         var_DelCallback( p_sys->p_input, "can-pause", AllCallback, p_intf );
         var_DelCallback( p_sys->p_input, "can-seek", AllCallback, p_intf );
-        vlc_object_release( p_sys->p_input );
+        input_Release(p_sys->p_input);
         p_sys->p_input = NULL;
     }
 
@@ -1096,7 +1095,7 @@ static int TrackChange( intf_thread_t *p_intf )
     p_item = input_GetItem( p_input );
     if( !p_item )
     {
-        vlc_object_release( p_input );
+        input_Release(p_input);
         return VLC_EGENERIC;
     }
 

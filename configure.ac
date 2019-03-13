@@ -95,6 +95,19 @@ HAVE_IOS="0"
 HAVE_OSX="0"
 HAVE_TVOS="0"
 
+dnl  Set x86 asm flags and defines
+X86ASMFLAGS=""
+case "${host_cpu}" in
+    i?86)
+    X86ASMFLAGS="-f elf32"
+    X86ASMDEFS="-DARCH_X86_32=1 -DARCH_X86_64=0"
+        ;;
+    x86_64)
+    X86ASMFLAGS="-f elf64"
+    X86ASMDEFS="-DARCH_X86_32=0 -DARCH_X86_64=1"
+        ;;
+esac
+
 case "${host_os}" in
   "")
     SYS=unknown
@@ -132,6 +145,8 @@ case "${host_os}" in
     case "${host_cpu}" in
       i?86)
         ARCH_flag="-arch i386"
+        X86ASMFLAGS="-f macho32"
+        X86ASMDEFS="${X86ASMDEFS} -DPREFIX"
       ;;
       ppc64*)
         ARCH_flag="-arch ppc64"
@@ -141,6 +156,8 @@ case "${host_os}" in
       ;;
       x86_64)
         ARCH_flag="-arch x86_64"
+        X86ASMFLAGS="-f macho64"
+        X86ASMDEFS="${X86ASMDEFS} -DPREFIX"
       ;;
       arm*)
         ac_cv_c_bigendian="no"
@@ -254,15 +271,28 @@ case "${host_os}" in
         dnl NSIS/MSI Installer prefix and WIN64
         dnl
         case "${host_cpu}" in
-            amd64|x86_64|aarch64)
+            aarch64)
+                HAVE_WIN64="1"
+                WINDOWS_ARCH="arm64"
+                PROGRAMFILES="PROGRAMFILES64"
+                LDFLAGS="${LDFLAGS} -Wl,--high-entropy-va -Wl,--image-base,0x140000000"
+            ;;
+            amd64|x86_64)
                 HAVE_WIN64="1"
                 WINDOWS_ARCH="x64"
                 PROGRAMFILES="PROGRAMFILES64"
                 LDFLAGS="${LDFLAGS} -Wl,--high-entropy-va -Wl,--image-base,0x140000000"
+                X86ASMFLAGS="-f win64"
+            ;;
+            armv7)
+                WINDOWS_ARCH="arm"
+                PROGRAMFILES="PROGRAMFILES"
             ;;
             *)
                 WINDOWS_ARCH="x86"
                 PROGRAMFILES="PROGRAMFILES"
+                X86ASMFLAGS="-f win32"
+                X86ASMDEFS="${X86ASMDEFS} -DPREFIX"
             ;;
         esac
         AC_SUBST([WINDOWS_ARCH])
@@ -331,6 +361,15 @@ AM_CONDITIONAL([HAVE_WIN32],   [test "${SYS}" = "mingw32"])
 AM_CONDITIONAL([HAVE_WIN64],   [test "${HAVE_WIN64}" = "1"]) dnl Only used for the packaging
 AM_CONDITIONAL([HAVE_WINSTORE], [test "$vlc_winstore_app" = "1"])
 AM_CONDITIONAL([HAVE_WIN32_DESKTOP], [test "${SYS}" = "mingw32" -a "$vlc_winstore_app" = "0"])
+
+dnl Use nasm/yasm only on x86
+AC_CHECK_PROGS(X86ASM, [nasm yasm])
+AM_CONDITIONAL([HAVE_X86ASM], [test -n "${X86ASM}" && test -n "${X86ASMFLAGS}"])
+AM_COND_IF([HAVE_X86ASM], [
+  AC_DEFINE([HAVE_X86ASM], [1], [Use external asm on x86.])
+])
+AC_SUBST([X86ASMFLAGS])
+AC_SUBST([X86ASMDEFS])
 
 dnl
 dnl Sadly autoconf does not think about testing foo.exe when ask to test
@@ -950,9 +989,9 @@ dnl
 dnl  Debugging mode
 dnl
 AC_ARG_ENABLE([debug],
-  AS_HELP_STRING([--enable-debug],
-    [build with run-time assertions (default disabled)]),,
-  [enable_debug="no"])
+  AS_HELP_STRING([--disable-debug],
+    [disable run-time assertions (default enabled)]),,
+  [enable_debug="yes"])
 AH_TEMPLATE(NDEBUG,
             [Define to 1 if debug code should NOT be compiled])
 AS_IF([test "${enable_debug}" != "no"], [
@@ -1300,7 +1339,7 @@ AM_CONDITIONAL([HAVE_MMX], [test "${have_mmx}" = "yes"])
 AM_CONDITIONAL([HAVE_MMXEXT], [test "${have_mmxext}" = "yes"])
 
 dnl  Check for fully workin SSE2 intrinsics
-dnl  We need support for -mmmx, we need <emmintrin.h>, and we also need a
+dnl  We need support for -msse[2], we need <emmintrin.h>, and we also need a
 dnl  working compiler (http://gcc.gnu.org/bugzilla/show_bug.cgi?id=23963)
 AC_ARG_ENABLE([sse],
   AS_HELP_STRING([--disable-sse],
@@ -1393,6 +1432,7 @@ asm volatile("movsldup %%xmm1,%%xmm0"::"r"(p):"xmm0", "xmm1");
 
   AS_IF([test "${ac_cv_sse3_inline}" != "no"], [
     AC_DEFINE(CAN_COMPILE_SSE3, 1, [Define to 1 if SSE3 inline assembly is available.]) ])
+
   # SSSE3
   AC_CACHE_CHECK([if $CC groks SSSE3 inline assembly], [ac_cv_ssse3_inline], [
     AC_COMPILE_IFELSE([AC_LANG_PROGRAM(,[[
@@ -1460,6 +1500,88 @@ asm volatile("insertq %%xmm1,%%xmm0"::"r"(p):"xmm0", "xmm1");
     AC_DEFINE([CAN_COMPILE_SSE4A], [1], [Define to 1 if SSE4A inline assembly is available.]) ])
 ])
 AM_CONDITIONAL([HAVE_SSE2], [test "$have_sse2" = "yes"])
+
+dnl  Check for fully workin AVX2 intrinsics
+dnl  We need support for -mavx[2], we need <immintrin.h>, and we also need a
+dnl  working compiler (http://gcc.gnu.org/bugzilla/show_bug.cgi?id=23963)
+AC_ARG_ENABLE([avx],
+  AS_HELP_STRING([--disable-avx],
+    [disable AVX (1-2) optimizations (default auto)]),, [
+  case "${host_cpu}" in
+    i?86|x86_64)
+      enable_avx=yes
+      ;;
+    *)
+      enable_avx=no
+      ;;
+  esac
+])
+have_avx2="no"
+AS_IF([test "${enable_avx}" != "no"], [
+  ARCH="${ARCH} avx avx2"
+
+  VLC_SAVE_FLAGS
+  CFLAGS="${CFLAGS} -mavx2"
+  AC_CACHE_CHECK([if $CC groks AVX2 intrinsics], [ac_cv_c_avx2_intrinsics], [
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([
+[#include <immintrin.h>
+#include <stdint.h>
+uint64_t frobzor;]], [
+[__m256i a, b, c;
+a = b = c = _mm256_set1_epi64x((int64_t)frobzor);
+a = _mm256_slli_epi16(a, 3);
+a = _mm256_adds_epi16(a, b);
+c = _mm256_srli_epi16(c, 8);
+c = _mm256_slli_epi16(c, 3);
+b = _mm256_adds_epi16(b, c);
+a = _mm256_unpacklo_epi8(a, b);
+frobzor = (uint64_t)_mm256_extract_epi64(a, 0);]])], [
+      ac_cv_c_avx2_intrinsics=yes
+    ], [
+      ac_cv_c_avx2_intrinsics=no
+    ])
+  ])
+  VLC_RESTORE_FLAGS
+  AS_IF([test "${ac_cv_c_avx2_intrinsics}" != "no"], [
+    AC_DEFINE(HAVE_AVX2_INTRINSICS, 1, [Define to 1 if AVX2 intrinsics are available.])
+  ])
+
+  VLC_SAVE_FLAGS
+  CFLAGS="${CFLAGS} -mavx"
+  AC_CACHE_CHECK([if $CC groks AVX inline assembly], [ac_cv_avx_inline], [
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM(,[[
+void *p;
+asm volatile("xorps256 %%ymm1,%%ymm2"::"r"(p):"ymm1", "ymm2");
+]])
+    ], [
+      ac_cv_avx_inline=yes
+    ], [
+      ac_cv_avx_inline=no
+    ])
+  ])
+
+  AS_IF([test "${ac_cv_avx_inline}" != "no" -a "${SYS}" != "solaris"], [
+    AC_DEFINE(CAN_COMPILE_AVX, 1, [Define to 1 if AVX inline assembly is available.])
+  ])
+
+  AC_CACHE_CHECK([if $CC groks AVX2 inline assembly], [ac_cv_avx2_inline], [
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM(,[[
+void *p;
+asm volatile("punpckhqdq256 %%ymm1,%%ymm2"::"r"(p):"ymm1", "ymm2");
+]])
+    ], [
+      ac_cv_avx2_inline=yes
+    ], [
+      ac_cv_avx2_inline=no
+    ])
+  ])
+  VLC_RESTORE_FLAGS
+  AS_IF([test "${ac_cv_avx2_inline}" != "no" -a "${SYS}" != "solaris"], [
+    AC_DEFINE(CAN_COMPILE_AVX2, 1, [Define to 1 if AVX2 inline assembly is available.])
+    have_avx2="yes"
+  ])
+])
+AM_CONDITIONAL([HAVE_AVX2], [test "$have_avx2" = "yes"])
 
 VLC_SAVE_FLAGS
 CFLAGS="${CFLAGS} -mmmx"
@@ -1859,21 +1981,12 @@ AS_IF([test "$SYS" = "linux" -a "${enable_linsys}" != "no"], [
 dnl
 dnl dvdread module: check for libdvdread
 dnl
-PKG_ENABLE_MODULES_VLC([DVDREAD], [], [dvdread > 4.9.0], [dvdread input module], [auto])
+PKG_ENABLE_MODULES_VLC([DVDREAD], [], [dvdread > 6.0.0], [dvdread input module], [auto])
 
 dnl
 dnl libdvdnav plugin
 dnl
-PKG_ENABLE_MODULES_VLC([DVDNAV], [], [dvdnav > 4.9.0], [DVD with navigation input module (dvdnav)], [auto])
-AS_IF([test "${enable_dvdnav}" != "no"], [
-  AC_MSG_CHECKING(for dvdnav_stream_cb in dvdnav/dvdnav.h)
-    AC_EGREP_HEADER(dvdnav_stream_cb,dvdnav/dvdnav.h,[
-      AC_MSG_RESULT(yes)
-      AC_DEFINE(HAVE_STREAM_CB_IN_DVDNAV_H, 1, For dvdnav demux support)
-      ],[
-      AC_MSG_RESULT(no)
-    ])
-])
+PKG_ENABLE_MODULES_VLC([DVDNAV], [], [dvdnav >= 6.0.0], [DVD with navigation input module (dvdnav)], [auto])
 
 dnl
 dnl  Blu-ray Disc Support with libbluray
@@ -3152,8 +3265,6 @@ AS_IF([test "${enable_xcb}" != "no"], [
     xcb_err="$xcb_err ${XCB_SHM_PKG_ERRORS}."])
   PKG_CHECK_MODULES([XCB_XKB], [xcb-xkb],, [
     xcb_err="$xcb_err ${XCB_XKB_PKG_ERRORS}."])
-  PKG_CHECK_MODULES([XCB_XV], [xcb-xv >= 1.1.90.1],, [
-    xcb_err="$xcb_err ${XCB_XV_PKG_ERRORS}."])
 
   dnl xproto
   PKG_CHECK_MODULES(XPROTO, [xproto],, [
@@ -3436,12 +3547,15 @@ AS_IF([test "${enable_directx}" != "no"], [
   ])
 
   dnl OpenGL
-  AC_CHECK_HEADERS([GL/wglew.h], [
-    VLC_ADD_PLUGIN([glwin32 wgl])
-  ],, [
-    #include <windows.h>
-    #include <GL/gl.h>
-  ])
+  AC_CHECK_HEADERS([GL/glew.h], [
+    AC_CHECK_HEADERS([GL/wglew.h], [
+        VLC_ADD_PLUGIN([glwin32 wgl])
+      ],, [
+        #include <windows.h>
+        #include <GL/glew.h>
+      ])],, [
+      #include <windows.h>
+   ])
 
   dnl Direct3D11
   AC_CHECK_HEADERS([d3d11.h], [
@@ -4182,7 +4296,7 @@ AC_ARG_ENABLE([taglib],
   AS_HELP_STRING([--disable-taglib],
     [do not use TagLib (default enabled)]))
 AS_IF([test "${enable_taglib}" != "no"], [
-  PKG_CHECK_MODULES(TAGLIB, taglib >= 1.9, [
+  PKG_CHECK_MODULES(TAGLIB, taglib >= 1.11, [
     VLC_ADD_PLUGIN([taglib])
   ], [
     AC_MSG_WARN([${TAGLIB_PKG_ERRORS}.])])
@@ -4251,7 +4365,7 @@ AC_ARG_WITH(kde-solid,
   AS_HELP_STRING([--with-kde-solid=PATH],
                  [KDE Solid actions directory (auto)]),, [
 
-if test "${SYS}" != "mingw32" -a "${SYS}" != "darwin" ; then
+if test "${SYS}" != "mingw32" -a "${SYS}" != "darwin" -a "${HAVE_ANDROID}" != "1" ; then
   with_kde_solid="yes"
 fi
 ])

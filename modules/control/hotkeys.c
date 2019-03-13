@@ -200,8 +200,10 @@ static int ButtonEvent( vlc_object_t *p_this, char const *psz_var,
 
     for (int i = MOUSE_BUTTON_WHEEL_UP; i <= MOUSE_BUTTON_WHEEL_RIGHT; i++)
         if (pressed & (1 << i))
-            var_SetInteger(p_intf->obj.libvlc, "key-pressed",
-                           i - MOUSE_BUTTON_WHEEL_UP + KEY_MOUSEWHEELUP);
+        {
+            int keycode = KEY_MOUSEWHEEL_FROM_BUTTON(i);
+            var_SetInteger(vlc_object_instance(p_intf), "key-pressed", keycode);
+        }
 
     return VLC_SUCCESS;
 }
@@ -239,7 +241,7 @@ static void ChangeVout( intf_thread_t *p_intf, vout_thread_t *p_vout )
         var_DelCallback( p_old_vout, "mouse-button-down", ButtonEvent,
                          p_intf );
         var_DelCallback( p_old_vout, "mouse-moved", MovedEvent, p_intf );
-        vlc_object_release( p_old_vout );
+        vout_Release(p_old_vout);
     }
 
     if( p_vout != NULL )
@@ -297,7 +299,7 @@ static void ChangeInput( intf_thread_t *p_intf, input_thread_t *p_input )
 
     /* Replace input and vout locked */
     vlc_mutex_lock( &p_sys->lock );
-    p_sys->p_input = p_input ? vlc_object_hold( p_input ) : NULL;
+    p_sys->p_input = p_input ? input_Hold(p_input) : NULL;
     p_sys->p_vout = NULL;
     p_sys->vrnav.b_can_change = false;
     vlc_mutex_unlock( &p_sys->lock );
@@ -306,8 +308,8 @@ static void ChangeInput( intf_thread_t *p_intf, input_thread_t *p_input )
     if( p_old_input != NULL )
     {
         if( p_old_vout != NULL )
-            vlc_object_release( p_old_vout );
-        vlc_object_release( p_old_input );
+            vout_Release(p_old_vout);
+        input_Release(p_old_input);
     }
 
     /* Register input events */
@@ -349,7 +351,7 @@ static int Open( vlc_object_t *p_this )
 
     vlc_mutex_init( &p_sys->lock );
 
-    var_AddCallback( p_intf->obj.libvlc, "key-action", ActionEvent, p_intf );
+    var_AddCallback( vlc_object_instance(p_intf), "key-action", ActionEvent, p_intf );
 
     var_AddCallback( pl_Get(p_intf), "input-current", PlaylistEvent, p_intf );
 
@@ -366,7 +368,7 @@ static void Close( vlc_object_t *p_this )
 
     var_DelCallback( pl_Get(p_intf), "input-current", PlaylistEvent, p_intf );
 
-    var_DelCallback( p_intf->obj.libvlc, "key-action", ActionEvent, p_intf );
+    var_DelCallback( vlc_object_instance(p_intf), "key-action", ActionEvent, p_intf );
 
     ChangeInput( p_intf, NULL );
 
@@ -389,7 +391,7 @@ static int PutAction( intf_thread_t *p_intf, input_thread_t *p_input,
     {
         /* Libvlc / interface actions */
         case ACTIONID_QUIT:
-            libvlc_Quit( p_intf->obj.libvlc );
+            libvlc_Quit( vlc_object_instance(p_intf) );
 
             ClearChannels( p_vout, slider_chan );
             DisplayMessage( p_vout, _( "Quit" ) );
@@ -562,7 +564,7 @@ static int PutAction( intf_thread_t *p_intf, input_thread_t *p_input,
 
             if( !aout_DeviceSet( p_aout, ids[idx] ) )
                 DisplayMessage( p_vout, _("Audio Device: %s"), names[idx] );
-            vlc_object_release( p_aout );
+            aout_Release(p_aout);
 
             for( int i = 0; i < n; i++ )
             {
@@ -1442,9 +1444,9 @@ static int ActionEvent( vlc_object_t *libvlc, char const *psz_var,
     (void)oldval;
 
     vlc_mutex_lock( &p_intf->p_sys->lock );
-    input_thread_t *p_input = p_sys->p_input ? vlc_object_hold( p_sys->p_input )
+    input_thread_t *p_input = p_sys->p_input ? input_Hold(p_sys->p_input)
                                              : NULL;
-    vout_thread_t *p_vout = p_sys->p_vout ? vlc_object_hold( p_sys->p_vout )
+    vout_thread_t *p_vout = p_sys->p_vout ? vout_Hold(p_sys->p_vout)
                                           : NULL;
     int slider_chan = p_sys->slider_chan;
     bool b_vrnav = p_sys->vrnav.b_can_change;
@@ -1454,9 +1456,9 @@ static int ActionEvent( vlc_object_t *libvlc, char const *psz_var,
                            newval.i_int );
 
     if( p_input != NULL )
-        vlc_object_release( p_input );
+        input_Release(p_input);
     if( p_vout != NULL )
-        vlc_object_release( p_vout );
+        vout_Release(p_vout);
 
     return i_ret;
 }
@@ -1569,8 +1571,8 @@ static void DisplayRate( vout_thread_t *p_vout, float f_rate )
 
 static float AdjustRateFine( vlc_object_t *p_obj, const int i_dir )
 {
-    const float f_rate_min = (float)INPUT_RATE_DEFAULT / INPUT_RATE_MAX;
-    const float f_rate_max = (float)INPUT_RATE_DEFAULT / INPUT_RATE_MIN;
+    const float f_rate_min = INPUT_RATE_MIN;
+    const float f_rate_max = INPUT_RATE_MAX;
     float f_rate = var_GetFloat( p_obj, "rate" );
 
     int i_sign = f_rate < 0 ? -1 : 1;

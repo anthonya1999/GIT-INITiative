@@ -437,7 +437,7 @@ player_on_vout_list_changed(vlc_player_t *player,
         .action = action,
         .vout = vout,
     };
-    vlc_object_hold(vout);
+    vout_Hold(vout);
     VEC_PUSH(on_vout_list_changed, report);
 }
 
@@ -566,7 +566,7 @@ ctx_reset(struct ctx *ctx)
     {
         struct report_vout_list report;
         FOREACH_VEC(report, on_vout_list_changed)
-            vlc_object_release(report.vout);
+            vout_Release(report.vout);
     }
 
     {
@@ -1697,6 +1697,7 @@ main(void)
         "--no-media-library",
         /* Avoid leaks from various dlopen... */
         "--codec=araw,rawvideo,subsdec,none",
+        "--dec-dev=none",
         "--vout=dummy",
         "--aout=dummy",
     };

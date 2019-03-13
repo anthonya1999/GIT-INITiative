@@ -378,7 +378,7 @@ int ScanLuaCallback( vlc_object_t *p_this, const char *psz_filename,
                 {
                     /* Key is at index -2 and value at index -1. Discard key */
                     const char *psz_cap = luaL_checkstring( L, -1 );
-                    bool b_ok = false;
+                    bool found = false;
                     /* Find this capability's flag */
                     for( size_t i = 0; i < sizeof(caps)/sizeof(caps[0]); i++ )
                     {
@@ -386,11 +386,11 @@ int ScanLuaCallback( vlc_object_t *p_this, const char *psz_filename,
                         {
                             /* Flag it! */
                             p_ext->p_sys->i_capabilities |= 1 << i;
-                            b_ok = true;
+                            found = true;
                             break;
                         }
                     }
-                    if( !b_ok )
+                    if( !found )
                     {
                         msg_Warn( p_mgr, "Extension capability '%s' unknown in"
                                   " script %s", psz_cap, psz_script );
@@ -592,11 +592,10 @@ static int Control( extensions_manager_t *p_mgr, int i_control, va_list args )
                                       p_ext );
                     input_item_Release( p_item );
                 }
-                vlc_object_release( old );
+                input_Release(old);
             }
 
-            p_ext->p_sys->p_input = p_input ? vlc_object_hold( p_input )
-                                            : p_input;
+            p_ext->p_sys->p_input = p_input ? input_Hold(p_input) : NULL;
 
             // Tell the script the input changed
             if( p_ext->p_sys->i_capabilities & EXT_INPUT_LISTENER )
@@ -669,7 +668,7 @@ int lua_ExtensionDeactivate( extensions_manager_t *p_mgr, extension_t *p_ext )
             input_item_t *p_item = input_GetItem( p_ext->p_sys->p_input );
             input_item_Release( p_item );
         }
-        vlc_object_release( p_ext->p_sys->p_input );
+        input_Release(p_ext->p_sys->p_input);
         p_ext->p_sys->p_input = NULL;
     }
 
@@ -819,7 +818,7 @@ static lua_State* GetLuaState( extensions_manager_t *p_mgr,
         }
         vlclua_set_this( L, p_mgr );
         vlclua_set_playlist_internal( L,
-            pl_Get((intf_thread_t *)(p_mgr->obj.parent)) );
+            pl_Get((intf_thread_t *)vlc_object_parent(p_mgr)) );
         vlclua_extension_set( L, p_ext );
 
         luaL_openlibs( L );

@@ -55,7 +55,7 @@ void filter_AddProxyCallbacks( vlc_object_t *obj, filter_t *filter,
     {
         char *name = *pname;
         int var_type = var_Type(filter, name);
-        if (var_Type(obj, name))
+        if (var_Type(obj, name) || config_GetType(name) == 0)
         {
             free(name);
             continue;
@@ -173,7 +173,7 @@ void filter_DeleteBlend( filter_t *p_blend )
     if( p_blend->p_module )
         module_unneed( p_blend, p_blend->p_module );
 
-    vlc_object_release( p_blend );
+    vlc_object_delete(p_blend);
 }
 
 /* */
@@ -207,7 +207,6 @@ void video_splitter_Delete( video_splitter_t *p_splitter )
         module_unneed( p_splitter, p_splitter->p_module );
 
     video_format_Clean( &p_splitter->fmt );
-
-    vlc_object_release( p_splitter );
+    vlc_object_delete(p_splitter);
 }
 

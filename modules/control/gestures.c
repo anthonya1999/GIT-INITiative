@@ -171,7 +171,7 @@ static void Close ( vlc_object_t *p_this )
         var_DelCallback( p_sys->p_vout, "mouse-moved", MovedEvent, p_intf );
         var_DelCallback( p_sys->p_vout, "mouse-button-down",
                          ButtonEvent, p_intf );
-        vlc_object_release( p_sys->p_vout );
+        vout_Release(p_sys->p_vout);
     }
 
     /* Destroy structure */
@@ -201,7 +201,7 @@ static void ProcessGesture( intf_thread_t *p_intf )
             int it = var_InheritInteger( p_intf , "short-jump-size" );
             if( it > 0 )
                 var_SetInteger( p_input, "time-offset", vlc_tick_from_sec( -it ) );
-            vlc_object_release( p_input );
+            input_Release(p_input);
             break;
         }
 
@@ -216,7 +216,7 @@ static void ProcessGesture( intf_thread_t *p_intf )
             int it = var_InheritInteger( p_intf , "short-jump-size" );
             if( it > 0 )
                 var_SetInteger( p_input, "time-offset", vlc_tick_from_sec( it ) );
-            vlc_object_release( p_input );
+            input_Release(p_input);
             break;
         }
 
@@ -242,7 +242,7 @@ static void ProcessGesture( intf_thread_t *p_intf )
             int i_state = var_GetInteger( p_input, "state" );
             i_state = (i_state == PLAYING_S) ? PAUSE_S : PLAYING_S;
             var_SetInteger( p_input, "state", i_state );
-            vlc_object_release( p_input );
+            input_Release(p_input);
             break;
         }
 
@@ -304,7 +304,7 @@ static void ProcessGesture( intf_thread_t *p_intf )
                 var_SetInteger( p_input, "audio-es", list[i].i_int );
             }
             free(list);
-            vlc_object_release( p_input );
+            input_Release(p_input);
             break;
         }
 
@@ -342,7 +342,7 @@ static void ProcessGesture( intf_thread_t *p_intf )
                 var_SetInteger( p_input, "audio-es", list[i].i_int );
             }
             free(list);
-            vlc_object_release( p_input );
+            input_Release(p_input);
             break;
         }
 
@@ -356,7 +356,7 @@ static void ProcessGesture( intf_thread_t *p_intf )
 
         case GESTURE(DOWN,LEFT,NONE,NONE):
             /* FIXME: Should close the vout!"*/
-            libvlc_Quit( p_intf->obj.libvlc );
+            libvlc_Quit( vlc_object_instance(p_intf) );
             break;
 
         case GESTURE(DOWN,LEFT,UP,RIGHT):
@@ -483,7 +483,7 @@ static int InputEvent( vlc_object_t *p_this, char const *psz_var,
                              p_intf );
             var_DelCallback( p_sys->p_vout, "mouse-button-down", ButtonEvent,
                              p_intf );
-            vlc_object_release( p_sys->p_vout );
+            vout_Release(p_sys->p_vout);
         }
 
         p_sys->p_vout = input_GetVout( p_input );

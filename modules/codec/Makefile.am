@@ -273,9 +273,6 @@ libzvbi_plugin_la_SOURCES = codec/zvbi.c
 libzvbi_plugin_la_CFLAGS = $(AM_CFLAGS) $(ZVBI_CFLAGS) $(CFLAGS_zvbi)
 libzvbi_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(codecdir)'
 libzvbi_plugin_la_LIBADD = $(ZVBI_LIBS) $(SOCKET_LIBS)
-if HAVE_WINSTORE
-libzvbi_plugin_la_LIBADD += -lpthreadGC2
-endif
 EXTRA_LTLIBRARIES += libzvbi_plugin.la
 codec_LTLIBRARIES += $(LTLIBzvbi)
 
@@ -406,21 +403,12 @@ endif
 
 ### avcodec hardware acceleration ###
 
-libvaapi_drm_plugin_la_SOURCES = \
-	codec/avcodec/vaapi.c hw/vaapi/vlc_vaapi.c hw/vaapi/vlc_vaapi.h
-libvaapi_drm_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) -DVLC_VA_BACKEND_DRM
-libvaapi_drm_plugin_la_CFLAGS = $(AM_CFLAGS) \
-	$(LIBVA_DRM_CFLAGS) $(AVCODEC_CFLAGS)
-libvaapi_drm_plugin_la_LIBADD = $(LIBVA_DRM_LIBS)
 libvaapi_plugin_la_SOURCES = \
 	codec/avcodec/vaapi.c hw/vaapi/vlc_vaapi.c hw/vaapi/vlc_vaapi.h
 libvaapi_plugin_la_CPPFLAGS = $(AM_CPPFLAGS)
 libvaapi_plugin_la_CFLAGS = $(AM_CFLAGS) $(AVCODEC_CFLAGS)
 libvaapi_plugin_la_LIBADD = $(LIBVA_LIBS)
 if HAVE_AVCODEC_VAAPI
-if HAVE_VAAPI_DRM
-codec_LTLIBRARIES += libvaapi_drm_plugin.la
-endif
 codec_LTLIBRARIES += libvaapi_plugin.la
 endif
 

@@ -75,11 +75,10 @@ void vlc_mutex_unmark(const vlc_mutex_t *);
 /*
  * Logging
  */
-typedef struct vlc_logger_t vlc_logger_t;
+typedef struct vlc_logger vlc_logger_t;
 
 int vlc_LogPreinit(libvlc_int_t *) VLC_USED;
 void vlc_LogInit(libvlc_int_t *);
-void vlc_LogDeinit(libvlc_int_t *);
 
 /*
  * LibVLC exit event handling
@@ -115,12 +114,6 @@ extern void *
 vlc_custom_create (vlc_object_t *p_this, size_t i_size, const char *psz_type);
 #define vlc_custom_create(o, s, n) \
         vlc_custom_create(VLC_OBJECT(o), s, n)
-
-/**
- * Assign a name to an object for vlc_object_find_name().
- */
-extern int vlc_object_set_name(vlc_object_t *, const char *);
-#define vlc_object_set_name(o, n) vlc_object_set_name(VLC_OBJECT(o), n)
 
 /* Types */
 typedef void (*vlc_destructor_t) (struct vlc_object_t *);
@@ -184,16 +177,17 @@ typedef struct vlc_keystore vlc_keystore;
 typedef struct vlc_actions_t vlc_actions_t;
 typedef struct vlc_playlist vlc_playlist_t;
 typedef struct vlc_media_source_provider_t vlc_media_source_provider_t;
+typedef struct intf_thread_t intf_thread_t;
 
 typedef struct libvlc_priv_t
 {
     libvlc_int_t       public_data;
 
     /* Singleton objects */
-    vlc_logger_t      *logger;
     vlm_t             *p_vlm;  ///< the VLM singleton (or NULL)
     vlc_dialog_provider *p_dialog_provider; ///< dialog provider
     vlc_keystore      *p_memory_keystore; ///< memory keystore
+    intf_thread_t *interfaces;  ///< Linked-list of interfaces
     struct playlist_t *playlist; ///< Playlist for interfaces
     vlc_playlist_t *main_playlist;
     struct input_preparser_t *parser; ///< Input item meta data handler

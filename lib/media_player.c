@@ -199,7 +199,7 @@ input_thread_t *libvlc_get_input_thread( libvlc_media_player_t *p_mi )
     lock_input(p_mi);
     p_input_thread = p_mi->input.p_thread;
     if( p_input_thread )
-        vlc_object_hold( p_input_thread );
+        input_Hold(p_input_thread);
     else
         libvlc_printerr( "No active input" );
     unlock_input(p_mi);
@@ -390,7 +390,7 @@ input_event_changed( vlc_object_t * p_this, char const * psz_cmd,
         else
         {
             for( size_t i = 0; i < i_vout; i++ )
-                vlc_object_release( pp_vout[i] );
+                vout_Release(pp_vout[i]);
             free( pp_vout );
         }
 
@@ -751,7 +751,7 @@ libvlc_media_player_new( libvlc_instance_t *instance )
     mp->input.p_resource = input_resource_New(VLC_OBJECT(mp));
     if (unlikely(mp->input.p_resource == NULL))
     {
-        vlc_object_release(mp);
+        vlc_object_delete(mp);
         return NULL;
     }
     audio_output_t *aout = input_resource_GetAout(mp->input.p_resource);
@@ -780,7 +780,8 @@ libvlc_media_player_new( libvlc_instance_t *instance )
      * FIXME: It's unclear why we want to put this in public API, and why we
      * want to expose it in such a limiting and ugly way.
      */
-    var_AddCallback(mp->obj.libvlc, "snapshot-file", snapshot_was_taken, mp);
+    var_AddCallback(vlc_object_instance(mp),
+                    "snapshot-file", snapshot_was_taken, mp);
 
     libvlc_retain(instance);
     return mp;
@@ -814,7 +815,7 @@ static void libvlc_media_player_destroy( libvlc_media_player_t *p_mi )
     assert( p_mi );
 
     /* Detach Callback from the main libvlc object */
-    var_DelCallback( p_mi->obj.libvlc,
+    var_DelCallback( vlc_object_instance(p_mi),
                      "snapshot-file", snapshot_was_taken, p_mi );
 
     /* Detach callback from the media player / input manager object */
@@ -845,7 +846,7 @@ static void libvlc_media_player_destroy( libvlc_media_player_t *p_mi )
     }
 
     libvlc_instance_t *instance = p_mi->p_libvlc_instance;
-    vlc_object_release( p_mi );
+    vlc_object_delete(p_mi);
     libvlc_release(instance);
 }
 
@@ -1010,7 +1011,7 @@ int libvlc_media_player_play( libvlc_media_player_t *p_mi )
     media_attach_preparsed_event( p_mi->p_md );
 
     p_input_thread = input_Create( p_mi, on_input_event, p_mi,
-                                   p_mi->p_md->p_input_item, NULL,
+                                   p_mi->p_md->p_input_item,
                                    p_mi->input.p_resource,
                                    p_mi->input.p_renderer );
     unlock(p_mi);
@@ -1065,7 +1066,7 @@ void libvlc_media_player_set_pause( libvlc_media_player_t *p_mi, int paused )
         var_SetInteger( p_input_thread, "state", PLAYING_S );
     }
 
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 }
 
 /**************************************************************************
@@ -1374,7 +1375,7 @@ libvlc_time_t libvlc_media_player_get_length(
         return -1;
 
     i_time = from_mtime(var_GetInteger( p_input_thread, "length" ));
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 
     return i_time;
 }
@@ -1389,7 +1390,7 @@ libvlc_time_t libvlc_media_player_get_time( libvlc_media_player_t *p_mi )
         return -1;
 
     i_time = from_mtime(var_GetInteger( p_input_thread , "time" ));
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
     return i_time;
 }
 
@@ -1403,7 +1404,7 @@ int libvlc_media_player_set_time( libvlc_media_player_t *p_mi,
         return -1;
 
     input_SetTime( p_input_thread, to_mtime(i_time), b_fast );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
     return 0;
 }
 
@@ -1417,7 +1418,7 @@ int libvlc_media_player_set_position( libvlc_media_player_t *p_mi,
         return -1;
 
     input_SetPosition( p_input_thread, position, b_fast );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
     return 0;
 }
 
@@ -1431,7 +1432,7 @@ float libvlc_media_player_get_position( libvlc_media_player_t *p_mi )
         return -1.0;
 
     f_position = var_GetFloat( p_input_thread, "position" );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 
     return f_position;
 }
@@ -1446,7 +1447,7 @@ void libvlc_media_player_set_chapter( libvlc_media_player_t *p_mi,
         return;
 
     var_SetInteger( p_input_thread, "chapter", chapter );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 }
 
 int libvlc_media_player_get_chapter( libvlc_media_player_t *p_mi )
@@ -1459,7 +1460,7 @@ int libvlc_media_player_get_chapter( libvlc_media_player_t *p_mi )
         return -1;
 
     i_chapter = var_GetInteger( p_input_thread, "chapter" );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 
     return i_chapter;
 }
@@ -1474,7 +1475,7 @@ int libvlc_media_player_get_chapter_count( libvlc_media_player_t *p_mi )
         return -1;
 
     int i_ret = var_Change( p_input_thread, "chapter", VLC_VAR_CHOICESCOUNT, &val );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 
     return i_ret == VLC_SUCCESS ? (ssize_t)val : -1;
 }
@@ -1493,7 +1494,7 @@ int libvlc_media_player_get_chapter_count_for_title(
     sprintf( psz_name, "title %2u", i_title );
 
     int i_ret = var_Change( p_input_thread, psz_name, VLC_VAR_CHOICESCOUNT, &val );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 
     return i_ret == VLC_SUCCESS ? (ssize_t)val : -1;
 }
@@ -1508,7 +1509,7 @@ void libvlc_media_player_set_title( libvlc_media_player_t *p_mi,
         return;
 
     var_SetInteger( p_input_thread, "title", i_title );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 
     //send event
     libvlc_event_t event;
@@ -1527,7 +1528,7 @@ int libvlc_media_player_get_title( libvlc_media_player_t *p_mi )
         return -1;
 
     i_title = var_GetInteger( p_input_thread, "title" );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 
     return i_title;
 }
@@ -1542,7 +1543,7 @@ int libvlc_media_player_get_title_count( libvlc_media_player_t *p_mi )
         return -1;
 
     int i_ret = var_Change( p_input_thread, "title", VLC_VAR_CHOICESCOUNT, &val );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 
     return i_ret == VLC_SUCCESS ? (ssize_t)val : -1;
 }
@@ -1563,7 +1564,7 @@ int libvlc_media_player_get_full_title_descriptions( libvlc_media_player_t *p_mi
     /* fetch data */
     int ret = input_Control( p_input_thread, INPUT_GET_FULL_TITLE_INFO,
                              &p_input_title, &count );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
     if( ret != VLC_SUCCESS )
         return -1;
 
@@ -1627,7 +1628,7 @@ int libvlc_media_player_get_full_chapter_descriptions( libvlc_media_player_t *p_
     int i_title_count = 0, ci_chapter_count = 0;
     int ret = input_Control( p_input_thread, INPUT_GET_FULL_TITLE_INFO, &pp_title,
                              &i_title_count );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 
     if( ret != VLC_SUCCESS || i_chapters_of_title >= i_title_count )
         goto error;
@@ -1721,7 +1722,7 @@ void libvlc_media_player_next_chapter( libvlc_media_player_t *p_mi )
     var_TriggerCallback( p_input_thread, (i_type & VLC_VAR_TYPE) != 0 ?
                             "next-chapter":"next-title" );
 
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 }
 
 void libvlc_media_player_previous_chapter( libvlc_media_player_t *p_mi )
@@ -1736,7 +1737,7 @@ void libvlc_media_player_previous_chapter( libvlc_media_player_t *p_mi )
     var_TriggerCallback( p_input_thread, (i_type & VLC_VAR_TYPE) != 0 ?
                             "prev-chapter":"prev-title" );
 
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 }
 
 int libvlc_media_player_will_play( libvlc_media_player_t *p_mi )
@@ -1747,7 +1748,7 @@ int libvlc_media_player_will_play( libvlc_media_player_t *p_mi )
         return false;
 
     int state = var_GetInteger( p_input_thread, "state" );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 
     return state != END_S && state != ERROR_S;
 }
@@ -1760,7 +1761,7 @@ int libvlc_media_player_set_rate( libvlc_media_player_t *p_mi, float rate )
     if( !p_input_thread )
         return 0;
     var_SetFloat( p_input_thread, "rate", rate );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
     return 0;
 }
 
@@ -1786,7 +1787,7 @@ int libvlc_media_player_is_seekable( libvlc_media_player_t *p_mi )
     if ( !p_input_thread )
         return false;
     b_seekable = var_GetBool( p_input_thread, "can-seek" );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 
     return b_seekable;
 }
@@ -1808,7 +1809,7 @@ void libvlc_media_player_navigate( libvlc_media_player_t* p_mi,
       return;
 
     input_Control( p_input, map[navigate], NULL );
-    vlc_object_release( p_input );
+    input_Release(p_input);
 }
 
 /* internal function, used by audio, video */
@@ -1849,7 +1850,7 @@ libvlc_track_description_t *
     *pp = NULL;
     free(val_list);
     free(text_list);
-    vlc_object_release( p_input );
+    input_Release(p_input);
 
     return ret;
 }
@@ -1877,7 +1878,7 @@ int libvlc_media_player_can_pause( libvlc_media_player_t *p_mi )
     if ( !p_input_thread )
         return false;
     b_can_pause = var_GetBool( p_input_thread, "can-pause" );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 
     return b_can_pause;
 }
@@ -1891,7 +1892,7 @@ int libvlc_media_player_program_scrambled( libvlc_media_player_t *p_mi )
     if ( !p_input_thread )
         return false;
     b_program_scrambled = var_GetBool( p_input_thread, "program-scrambled" );
-    vlc_object_release( p_input_thread );
+    input_Release(p_input_thread);
 
     return b_program_scrambled;
 }
@@ -1902,7 +1903,7 @@ void libvlc_media_player_next_frame( libvlc_media_player_t *p_mi )
     if( p_input_thread != NULL )
     {
         var_TriggerCallback( p_input_thread, "frame-next" );
-        vlc_object_release( p_input_thread );
+        input_Release(p_input_thread);
     }
 }
 
@@ -1958,7 +1959,7 @@ int libvlc_media_player_add_slave( libvlc_media_player_t *p_mi,
     {
         int i_ret = input_AddSlave( p_input_thread, (enum slave_type) i_type,
                                     psz_uri, b_select, false, false );
-        vlc_object_release( p_input_thread );
+        input_Release(p_input_thread);
 
         return i_ret == VLC_SUCCESS ? 0 : -1;
     }
@@ -2004,7 +2005,7 @@ int libvlc_media_player_set_equalizer( libvlc_media_player_t *p_mi, libvlc_equal
         }
 
         var_SetString( p_aout, "audio-filter", p_equalizer ? "equalizer" : "" );
-        vlc_object_release( p_aout );
+        aout_Release(p_aout);
     }
 
     return 0;

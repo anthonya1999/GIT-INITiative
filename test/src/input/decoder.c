@@ -87,16 +87,9 @@ static void queue_sub(decoder_t *dec, subpicture_t *p_subpic)
 static int decoder_load(decoder_t *decoder, bool is_packetizer,
                          const es_format_t *restrict fmt)
 {
+    decoder_Init( decoder, fmt );
+
     decoder->b_frame_drop_allowed = true;
-    decoder->i_extra_picture_buffers = 0;
-
-    decoder->pf_decode = NULL;
-    decoder->pf_get_cc = NULL;
-    decoder->pf_packetize = NULL;
-    decoder->pf_flush = NULL;
-
-    es_format_Copy(&decoder->fmt_in, fmt);
-    es_format_Init(&decoder->fmt_out, fmt->i_cat, 0);
 
     if (!is_packetizer)
     {
@@ -113,37 +106,18 @@ static int decoder_load(decoder_t *decoder, bool is_packetizer,
 
     if (!decoder->p_module)
     {
-        es_format_Clean(&decoder->fmt_in);
+        decoder_Clean( decoder );
         return VLC_EGENERIC;
     }
     return VLC_SUCCESS;
 }
 
-static void decoder_unload(decoder_t *decoder)
-{
-    if (decoder->p_module != NULL)
-    {
-        module_unneed(decoder, decoder->p_module);
-        decoder->p_module = NULL;
-        es_format_Clean(&decoder->fmt_out);
-    }
-    es_format_Clean(&decoder->fmt_in);
-    if (decoder->p_description)
-    {
-        vlc_meta_Delete(decoder->p_description);
-        decoder->p_description = NULL;
-    }
-}
-
 void test_decoder_destroy(decoder_t *decoder)
 {
     struct decoder_owner *owner = dec_get_owner(decoder);
-    decoder_t *packetizer = owner->packetizer;
 
-    decoder_unload(packetizer);
-    decoder_unload(decoder);
-    vlc_object_release(packetizer);
-    vlc_object_release(decoder);
+    decoder_Destroy(owner->packetizer);
+    decoder_Destroy(decoder);
 }
 
 decoder_t *test_decoder_create(vlc_object_t *parent, const es_format_t *fmt)
@@ -158,7 +132,7 @@ decoder_t *test_decoder_create(vlc_object_t *parent, const es_format_t *fmt)
     if (packetizer == NULL || owner == NULL)
     {
         if (packetizer)
-            vlc_object_release(packetizer);
+            vlc_object_delete(packetizer);
         return NULL;
     }
     decoder = &owner->dec;
@@ -198,23 +172,22 @@ decoder_t *test_decoder_create(vlc_object_t *parent, const es_format_t *fmt)
             decoder->cbs = &dec_spu_cbs;
             break;
         default:
-            vlc_object_release(packetizer);
-            vlc_object_release(decoder);
+            vlc_object_delete(packetizer);
+            vlc_object_delete(decoder);
             return NULL;
     }
 
     if (decoder_load(packetizer, true, fmt) != VLC_SUCCESS)
     {
-        vlc_object_release(packetizer);
-        vlc_object_release(decoder);
+        vlc_object_delete(packetizer);
+        vlc_object_delete(decoder);
         return NULL;
     }
 
     if (decoder_load(decoder, false, &packetizer->fmt_out) != VLC_SUCCESS)
     {
-        decoder_unload(packetizer);
-        vlc_object_release(packetizer);
-        vlc_object_release(decoder);
+        decoder_Destroy(packetizer);
+        vlc_object_delete(decoder);
         return NULL;
     }
 
@@ -248,7 +221,7 @@ int test_decoder_process(decoder_t *decoder, block_t *p_block)
             decoder->pf_decode(decoder, NULL);
 
             /* Reload decoder */
-            decoder_unload(decoder);
+            decoder_Clean(decoder);
             if (decoder_load(decoder, false, &packetizer->fmt_out) != VLC_SUCCESS)
             {
                 block_ChainRelease(p_packetized_block);

@@ -88,7 +88,7 @@ vlc_fourcc_t vlc_va_GetChroma(enum PixelFormat hwfmt, enum PixelFormat swfmt)
     }
 }
 
-static int vlc_va_Start(void *func, va_list ap)
+static int vlc_va_Start(void *func, bool forced, va_list ap)
 {
     vlc_va_t *va = va_arg(ap, vlc_va_t *);
     AVCodecContext *ctx = va_arg(ap, AVCodecContext *);
@@ -98,6 +98,7 @@ static int vlc_va_Start(void *func, va_list ap)
     int (*open)(vlc_va_t *, AVCodecContext *, enum PixelFormat,
                 const es_format_t *, void *) = func;
 
+    (void) forced;
     return open(va, ctx, pix_fmt, fmt, p_sys);
 }
 
@@ -131,7 +132,7 @@ vlc_va_t *vlc_va_New(vlc_object_t *obj, AVCodecContext *avctx,
     free(modlist);
     if (priv->module == NULL)
     {
-        vlc_object_release(va);
+        vlc_object_delete(va);
         va = NULL;
     }
     return va;
@@ -141,6 +142,6 @@ void vlc_va_Delete(vlc_va_t *va, void **hwctx)
 {
     struct vlc_va_priv *priv = container_of(va, struct vlc_va_priv, va);
 
-    vlc_module_unload(va, priv->module, vlc_va_Stop, va, hwctx);
-    vlc_object_release(va);
+    vlc_module_unload(priv->module, vlc_va_Stop, va, hwctx);
+    vlc_object_delete(va);
 }

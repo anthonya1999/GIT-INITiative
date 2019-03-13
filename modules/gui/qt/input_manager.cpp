@@ -100,7 +100,7 @@ void InputManager::setInput( input_thread_t *_p_input )
     if( p_input != NULL )
     {
         msg_Dbg( p_intf, "IM: Setting an input" );
-        vlc_object_hold( p_input );
+        input_Hold(p_input);
         addCallbacks();
 
         UpdateStatus();
@@ -187,7 +187,7 @@ void InputManager::delInput()
         p_input_vbi = NULL;
     }
 
-    vlc_object_release( p_input );
+    input_Release( p_input );
     p_input = NULL;
 
     emit positionUpdated( -1.0, 0 ,0 );
@@ -565,7 +565,7 @@ bool InputManager::hasVisualisation()
         return false;
 
     char *visual = var_InheritString( aout, "visual" );
-    vlc_object_release( aout );
+    aout_Release( aout );
 
     if( !visual )
         return false;
@@ -645,7 +645,7 @@ void InputManager::UpdateVout()
 
     /* Release the vout list */
     for( size_t i = 0; i < i_vout; i++ )
-        vlc_object_release( (vlc_object_t*)pp_vout[i] );
+        vout_Release(pp_vout[i]);
     free( pp_vout );
 }
 
@@ -678,7 +678,7 @@ void InputManager::requestArtUpdate( input_item_t *p_item, bool b_forced )
             if ( status & ( ITEM_ART_NOTFOUND|ITEM_ART_FETCHED ) )
                 return;
         }
-        libvlc_ArtRequest( p_intf->obj.libvlc, p_item,
+        libvlc_ArtRequest( vlc_object_instance(p_intf), p_item,
                            (b_forced) ? META_REQUEST_OPTION_SCOPE_ANY
                                       : META_REQUEST_OPTION_NONE,
                            NULL, NULL );
@@ -896,12 +896,12 @@ void InputManager::faster()
 
 void InputManager::littlefaster()
 {
-    var_SetInteger( p_intf->obj.libvlc, "key-action", ACTIONID_RATE_FASTER_FINE );
+    var_SetInteger( vlc_object_instance(p_intf), "key-action", ACTIONID_RATE_FASTER_FINE );
 }
 
 void InputManager::littleslower()
 {
-    var_SetInteger( p_intf->obj.libvlc, "key-action", ACTIONID_RATE_SLOWER_FINE );
+    var_SetInteger( vlc_object_instance(p_intf), "key-action", ACTIONID_RATE_SLOWER_FINE );
 }
 
 void InputManager::normalRate()
@@ -909,10 +909,9 @@ void InputManager::normalRate()
     var_SetFloat( THEPL, "rate", 1. );
 }
 
-void InputManager::setRate( int new_rate )
+void InputManager::setRate( float new_rate )
 {
-    var_SetFloat( THEPL, "rate",
-                 (float)INPUT_RATE_DEFAULT / (float)new_rate );
+    var_SetFloat( THEPL, "rate", new_rate );
 }
 
 void InputManager::jumpFwd()
@@ -1006,7 +1005,7 @@ MainInputManager::~MainInputManager()
 {
     if( p_input )
     {
-       vlc_object_release( p_input );
+       input_Release(p_input);
        p_input = NULL;
        emit inputChanged( false );
     }
@@ -1087,7 +1086,7 @@ void MainInputManager::customEvent( QEvent *event )
 void MainInputManager::probeCurrentInput()
 {
     if( p_input != NULL )
-        vlc_object_release( p_input );
+        input_Release(p_input);
     p_input = playlist_CurrentInput( THEPL );
     emit inputChanged( p_input != NULL );
 }
@@ -1239,7 +1238,7 @@ void MainInputManager::menusUpdateAudio( const QString& data )
     if( aout != NULL )
     {
         aout_DeviceSet( aout, qtu(data) );
-        vlc_object_release( aout );
+        aout_Release(aout);
     }
 }
 

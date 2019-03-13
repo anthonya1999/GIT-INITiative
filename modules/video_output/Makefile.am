@@ -77,22 +77,11 @@ libgl_plugin_la_CFLAGS += -DHAVE_GL_CORE_SYMBOLS
 libgl_plugin_la_LIBADD += $(GL_LIBS)
 endif
 
-libglconv_vaapi_wl_plugin_la_SOURCES = video_output/opengl/converter_vaapi.c \
+libglconv_vaapi_plugin_la_SOURCES = video_output/opengl/converter_vaapi.c \
 	video_output/opengl/converter.h \
 	hw/vaapi/vlc_vaapi.c hw/vaapi/vlc_vaapi.h
-libglconv_vaapi_wl_plugin_la_CFLAGS = $(AM_CFLAGS) $(GL_CFLAGS) -DHAVE_VA_WL $(LIBVA_WL_CFLAGS)
-libglconv_vaapi_wl_plugin_la_LIBADD = $(LIBVA_LIBS) $(LIBVA_EGL_LIBS) \
-	$(LIBVA_WL_LIBS)
-
-libglconv_vaapi_x11_plugin_la_SOURCES = $(libglconv_vaapi_wl_plugin_la_SOURCES)
-libglconv_vaapi_x11_plugin_la_CFLAGS = $(AM_CFLAGS) -DHAVE_VA_X11
-libglconv_vaapi_x11_plugin_la_LIBADD = $(LIBVA_LIBS) $(LIBVA_EGL_LIBS) \
-	$(LIBVA_X11_LIBS) $(X_LIBS) $(X_PRE_LIBS) -lX11
-
-libglconv_vaapi_drm_plugin_la_SOURCES = $(libglconv_vaapi_wl_plugin_la_SOURCES)
-libglconv_vaapi_drm_plugin_la_CFLAGS = $(AM_CFLAGS) -DHAVE_VA_DRM
-libglconv_vaapi_drm_plugin_la_LIBADD = $(LIBVA_LIBS) $(LIBVA_EGL_LIBS) \
-	$(LIBVA_DRM_LIBS)
+libglconv_vaapi_plugin_la_CFLAGS = $(AM_CFLAGS) $(GL_CFLAGS)
+libglconv_vaapi_plugin_la_LIBADD = $(LIBVA_LIBS) $(LIBVA_EGL_LIBS)
 
 libglconv_vdpau_plugin_la_SOURCES = video_output/opengl/converter_vdpau.c \
 	video_output/opengl/converter.h hw/vdpau/picture.c hw/vdpau/vlc_vdpau.h
@@ -103,19 +92,7 @@ if HAVE_GL
 vout_LTLIBRARIES += libgl_plugin.la
 if HAVE_EGL
 if HAVE_VAAPI
-if HAVE_WAYLAND
-if HAVE_VAAPI_WL
-vout_LTLIBRARIES += libglconv_vaapi_wl_plugin.la
-endif
-endif
-if HAVE_XCB
-if HAVE_VAAPI_X11
-vout_LTLIBRARIES += libglconv_vaapi_x11_plugin.la
-endif
-endif
-if HAVE_VAAPI_DRM
-vout_LTLIBRARIES += libglconv_vaapi_drm_plugin.la
-endif
+vout_LTLIBRARIES += libglconv_vaapi_plugin.la
 endif
 endif # HAVE_EGL
 
@@ -199,14 +176,6 @@ libxcb_render_plugin_la_CFLAGS = $(AM_CFLAGS) \
 libxcb_render_plugin_la_LIBADD = libvlc_xcb_events.la \
 	$(XCB_LIBS) $(XCB_SHM_LIBS) $(XCB_RENDER_LIBS) $(LIBM)
 
-libxcb_xv_plugin_la_SOURCES = \
-	video_output/xcb/pictures.c video_output/xcb/pictures.h \
-	video_output/xcb/xvideo.c
-libxcb_xv_plugin_la_CFLAGS = $(AM_CFLAGS) \
-	$(XCB_CFLAGS) $(XCB_SHM_CFLAGS) $(XCB_XV_CFLAGS)
-libxcb_xv_plugin_la_LIBADD = libvlc_xcb_events.la \
-	$(XCB_LIBS) $(XCB_SHM_LIBS) $(XCB_XV_LIBS)
-
 libxcb_window_plugin_la_SOURCES = video_output/xcb/window.c
 libxcb_window_plugin_la_CFLAGS = $(AM_CFLAGS) \
 	$(CFLAGS_xcb_window) \
@@ -233,7 +202,6 @@ libxcb_window_plugin_la_SOURCES += \
 	video_output/xcb/vlc_xkb.h video_output/xcb/xkb.c
 libxcb_window_plugin_la_CFLAGS += -DHAVE_XKBCOMMON
 endif
-vout_LTLIBRARIES += libxcb_xv_plugin.la
 if HAVE_EGL
 vout_LTLIBRARIES += libegl_x11_plugin.la
 endif

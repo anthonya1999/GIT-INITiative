@@ -120,7 +120,7 @@ static void SaveUrls( services_discovery_t *p_sd );
  *****************************************************************************/
 static int Open( vlc_object_t *p_this )
 {
-    if( strcmp( p_this->obj.parent->obj.object_type, "playlist" ) )
+    if( strcmp( vlc_object_typename(vlc_object_parent(p_this)), "playlist" ) )
         return VLC_EGENERIC; /* FIXME: support LibVLC SD too! */
 
     services_discovery_t *p_sd = ( services_discovery_t* )p_this;
@@ -145,7 +145,7 @@ static int Open( vlc_object_t *p_this )
     p_sd->description = _("Podcasts");
 
     /* Launch the callback associated with this variable */
-    vlc_object_t *pl = p_sd->obj.parent;
+    vlc_object_t *pl = vlc_object_parent(p_sd);
     var_Create( pl, "podcast-urls", VLC_VAR_STRING | VLC_VAR_DOINHERIT );
     var_AddCallback( pl, "podcast-urls", UrlsChange, p_sys );
 
@@ -171,7 +171,7 @@ static void Close( vlc_object_t *p_this )
 {
     services_discovery_t *p_sd = ( services_discovery_t* )p_this;
     services_discovery_sys_t *p_sys = p_sd->p_sys;
-    vlc_object_t *pl = p_sd->obj.parent;
+    vlc_object_t *pl = vlc_object_parent(p_sd);
 
     vlc_cancel (p_sys->thread);
     vlc_join (p_sys->thread, NULL);
@@ -212,11 +212,11 @@ static void Close( vlc_object_t *p_this )
 static input_thread_t *InputCreateAndStart( services_discovery_t *sd,
                                             input_item_t *item )
 {
-    input_thread_t *input = input_Create( sd, input_LegacyEvents, NULL, item, NULL, NULL, NULL );
+    input_thread_t *input = input_Create( sd, input_LegacyEvents, NULL, item, NULL, NULL );
     if( input != NULL && input_Start( input ) )
     {
         input_LegacyVarInit( input );
-        vlc_object_release( input );
+        input_Close(input);
         input = NULL;
     }
     return input;
@@ -239,7 +239,7 @@ noreturn static void *Run( void *data )
 
         if( p_sys->update_type == UPDATE_URLS )
         {
-            char *psz_urls = var_GetNonEmptyString( p_sd->obj.parent,
+            char *psz_urls = var_GetNonEmptyString( vlc_object_parent(p_sd),
                                                     "podcast-urls" );
             ParseUrls( p_sd, psz_urls );
             free( psz_urls );
@@ -316,10 +316,10 @@ static void ParseUrls( services_discovery_t *p_sd, char *psz_urls )
     char **ppsz_new_urls = NULL;
     p_sys->b_savedurls_loaded = true;
 
-    int i, j;
-
     for( ;; )
     {
+        int i;
+
         if( !psz_urls )
             break;
 
@@ -356,8 +356,10 @@ static void ParseUrls( services_discovery_t *p_sd, char *psz_urls )
     }
 
     /* delete removed items and signal the removal */
-    for( i = 0; i<p_sys->i_items; ++i )
+    for( int i = 0; i<p_sys->i_items; ++i )
     {
+        int j;
+
         for( j = 0; j < i_new_items; ++j )
             if( pp_new_items[j] == p_sys->pp_items[i] ) break;
         if( j == i_new_items )
@@ -391,7 +393,7 @@ static void ParseRequest( services_discovery_t *p_sd )
 
     if ( ! p_sys->b_savedurls_loaded )
     {
-        char *psz_urls = var_GetNonEmptyString( p_sd->obj.parent,
+        char *psz_urls = var_GetNonEmptyString( vlc_object_parent(p_sd),
                                                 "podcast-urls" );
         ParseUrls( p_sd, psz_urls );
         free( psz_urls );

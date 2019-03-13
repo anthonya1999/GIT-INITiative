@@ -183,15 +183,9 @@ AbstractDecodedStream::~AbstractDecodedStream()
 
     struct decoder_owner *p_owner;
     p_owner = container_of(p_decoder, struct decoder_owner, dec);
-    if(p_decoder->p_module)
-        module_unneed(p_decoder, p_decoder->p_module);
-    es_format_Clean(&p_owner->dec.fmt_in);
-    es_format_Clean(&p_owner->dec.fmt_out);
     es_format_Clean(&p_owner->decoder_out);
     es_format_Clean(&p_owner->last_fmt_update);
-    if(p_decoder->p_description)
-        vlc_meta_Delete(p_decoder->p_description);
-    vlc_object_release(p_decoder);
+    decoder_Destroy( p_decoder );
 }
 
 bool AbstractDecodedStream::init(const es_format_t *p_fmt)
@@ -217,25 +211,17 @@ bool AbstractDecodedStream::init(const es_format_t *p_fmt)
     p_owner->id = this;
 
     p_decoder = &p_owner->dec;
-    p_decoder->p_module = NULL;
-    es_format_Init(&p_decoder->fmt_out, p_fmt->i_cat, 0);
-    es_format_Copy(&p_decoder->fmt_in, p_fmt);
-    p_decoder->b_frame_drop_allowed = false;
+    decoder_Init( p_decoder, p_fmt );
 
     setCallbacks();
-
-    p_decoder->pf_decode = NULL;
-    p_decoder->pf_get_cc = NULL;
 
     p_decoder->p_module = module_need_var(p_decoder, category, "codec");
     if(!p_decoder->p_module)
     {
         msg_Err(p_stream, "cannot find %s for %4.4s", category, (char *)&p_fmt->i_codec);
-        es_format_Clean(&p_decoder->fmt_in);
-        es_format_Clean(&p_decoder->fmt_out);
         es_format_Clean(&p_owner->decoder_out);
         es_format_Clean(&p_owner->last_fmt_update);
-        vlc_object_release(p_decoder);
+        decoder_Destroy( p_decoder );
         p_decoder = NULL;
         return false;
     }

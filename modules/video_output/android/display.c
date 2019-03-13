@@ -207,7 +207,7 @@ static picture_t *PictureAlloc(vout_display_sys_t *sys, video_format_t *fmt,
     else
     {
         p_picsys->sw.p_vd_sys = sys;
-        res.pf_destroy = AndroidPicture_Destroy;
+        rsc.pf_destroy = AndroidPicture_Destroy;
     }
 
     p_pic = picture_NewFromResource(fmt, &rsc);
@@ -662,7 +662,7 @@ static void ClearSurface(vout_display_t *vd)
     {
         /* Clear the surface to black with OpenGL ES 2 */
         char *modlist = var_InheritString(sys->embed, "gles2");
-        vlc_gl_t *gl = vlc_gl_Create(sys->embed, VLC_OPENGL_ES2, modlist);
+        vlc_gl_t *gl = vlc_gl_Create(vd->cfg, VLC_OPENGL_ES2, modlist);
         free(modlist);
         if (gl == NULL)
             return;

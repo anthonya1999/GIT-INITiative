@@ -125,12 +125,10 @@ static int Open(vout_display_t *vd, const vout_display_cfg_t *cfg,
     }
 #endif
 
-    sys->gl = vlc_gl_Create (surface, API, gl_name);
+    sys->gl = vlc_gl_Create(cfg, API, gl_name);
     free(gl_name);
     if (sys->gl == NULL)
         goto error;
-
-    vlc_gl_Resize (sys->gl, cfg->display.width, cfg->display.height);
 
     /* Initialize video display */
     const vlc_fourcc_t *spu_chromas;
@@ -139,7 +137,7 @@ static int Open(vout_display_t *vd, const vout_display_cfg_t *cfg,
         goto error;
 
     sys->vgl = vout_display_opengl_New (fmt, &spu_chromas, sys->gl,
-                                        &cfg->viewpoint);
+                                        &cfg->viewpoint, context);
     vlc_gl_ReleaseCurrent (sys->gl);
 
     if (sys->vgl == NULL)
@@ -158,7 +156,6 @@ error:
         vlc_gl_Release (sys->gl);
     free (sys);
     return VLC_EGENERIC;
-    (void) context;
 }
 
 /**

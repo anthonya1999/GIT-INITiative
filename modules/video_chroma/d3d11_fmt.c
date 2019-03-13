@@ -207,7 +207,7 @@ void D3D11_GetDriverVersion(vlc_object_t *obj, d3d11_device_t *d3d_dev)
     }
 
     int wddm, d3d_features, revision, build;
-    /* see https://msdn.microsoft.com/windows/hardware/commercialize/design/compatibility/device-graphics */
+    /* see https://docs.microsoft.com/en-us/windows-hardware/drivers/display/wddm-2-1-features#driver-versioning */
     if (_stscanf(szData, TEXT("%d.%d.%d.%d"), &wddm, &d3d_features, &revision, &build) != 4)
     {
         msg_Warn(obj, "the adapter DriverVersion '%s' doesn't match the expected format", szData);
@@ -735,9 +735,6 @@ int D3D11_Create(vlc_object_t *obj, d3d11_handle_t *hd3d, bool with_shaders)
             return VLC_EGENERIC;
         }
     }
-#else
-    hd3d->hdll = NULL;
-    hd3d->compiler_dll = NULL;
 #endif
     return VLC_SUCCESS;
 }

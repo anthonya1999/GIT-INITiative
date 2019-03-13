@@ -182,9 +182,9 @@ static int lavc_GetVideoFormat(decoder_t *dec, video_format_t *restrict fmt,
     fmt->i_width = width;
     fmt->i_height = height;
     if ( dec->fmt_in.video.i_visible_width != 0 &&
-         dec->fmt_in.video.i_visible_width <= ctx->width &&
+         dec->fmt_in.video.i_visible_width <= (unsigned)ctx->width &&
          dec->fmt_in.video.i_visible_height != 0 &&
-         dec->fmt_in.video.i_visible_height <= ctx->height )
+         dec->fmt_in.video.i_visible_height <= (unsigned)ctx->height )
     {
         /* the demuxer/packetizer provided crop info that are lost in lavc */
         fmt->i_visible_width  = dec->fmt_in.video.i_visible_width;
@@ -477,6 +477,12 @@ static int OpenVideoCodec( decoder_t *p_dec )
                  p_dec->fmt_in.video.i_frame_rate_base < 6 )
     {
         ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
+    }
+
+    if( var_InheritBool(p_dec, "low-delay") )
+    {
+        ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
+        ctx->active_thread_type = FF_THREAD_SLICE;
     }
 
     post_mt( p_sys );
@@ -799,7 +805,7 @@ static void update_late_frame_count( decoder_t *p_dec, block_t *p_block,
    /* Update frame late count (except when doing preroll) */
    vlc_tick_t i_display_date = VLC_TICK_INVALID;
    if( !p_block || !(p_block->i_flags & BLOCK_FLAG_PREROLL) )
-       i_display_date = decoder_GetDisplayDate( p_dec, i_pts );
+       i_display_date = decoder_GetDisplayDate( p_dec, current_time, i_pts );
 
    vlc_tick_t i_threshold = i_next_pts != VLC_TICK_INVALID
                           ? (i_next_pts - i_pts) / 2 : VLC_TICK_FROM_MS(20);

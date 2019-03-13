@@ -1685,9 +1685,9 @@ void vlc_readdir_helper_init(struct vlc_readdir_helper *p_rdh,
                              vlc_object_t *p_obj, input_item_node_t *p_node)
 {
     /* Read options from the parent item. This allows vlc_stream_ReadDir()
-     * users to specify options whitout touhing any vlc_object_t. Apply options
-     * on a temporary object in order to not apply options (that can be
-     * insecure) to the current object. */
+     * users to specify options without affecting any exisitng vlc_object_t.
+     * Apply options on a temporary object in order to not apply options (which
+     * can be insecure) to the current object. */
     vlc_object_t *p_var_obj = vlc_object_create(p_obj, sizeof(vlc_object_t));
     if (p_var_obj != NULL)
     {
@@ -1706,7 +1706,7 @@ void vlc_readdir_helper_init(struct vlc_readdir_helper *p_rdh,
     TAB_INIT(p_rdh->i_dirs, p_rdh->pp_dirs);
 
     if (p_var_obj != NULL)
-        vlc_object_release(p_var_obj);
+        vlc_object_delete(p_var_obj);
 }
 
 void vlc_readdir_helper_finish(struct vlc_readdir_helper *p_rdh, bool b_success)

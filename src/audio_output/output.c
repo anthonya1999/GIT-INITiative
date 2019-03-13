@@ -70,6 +70,12 @@ static int var_CopyDevice (vlc_object_t *src, const char *name,
     return var_Set (dst, "audio-device", value);
 }
 
+static void aout_TimingNotify(audio_output_t *aout, vlc_tick_t system_ts,
+                              vlc_tick_t audio_ts)
+{
+    aout_RequestRetiming(aout, system_ts, audio_ts);
+}
+
 /**
  * Supply or update the current custom ("hardware") volume.
  * @param volume current custom volume
@@ -91,7 +97,7 @@ static void aout_MuteNotify (audio_output_t *aout, bool mute)
 
 static void aout_PolicyNotify (audio_output_t *aout, bool cork)
 {
-    (cork ? var_IncInteger : var_DecInteger) (aout->obj.parent, "corks");
+    (cork ? var_IncInteger : var_DecInteger)(vlc_object_parent(aout), "corks");
 }
 
 static void aout_DeviceNotify (audio_output_t *aout, const char *id)
@@ -159,6 +165,7 @@ static int aout_GainNotify (audio_output_t *aout, float gain)
 }
 
 static const struct vlc_audio_output_events aout_events = {
+    aout_TimingNotify,
     aout_VolumeNotify,
     aout_MuteNotify,
     aout_PolicyNotify,
@@ -262,7 +269,7 @@ audio_output_t *aout_New (vlc_object_t *parent)
     if (owner->module == NULL)
     {
         msg_Err (aout, "no suitable audio output module");
-        vlc_object_release (aout);
+        vlc_object_delete(aout);
         return NULL;
     }
 
@@ -373,12 +380,12 @@ void aout_Destroy (audio_output_t *aout)
 
     var_DelCallback (aout, "viewpoint", ViewpointCallback, NULL);
     var_DelCallback (aout, "audio-filter", FilterCallback, NULL);
-    var_DelCallback (aout, "device", var_CopyDevice, aout->obj.parent);
-    var_DelCallback (aout, "mute", var_Copy, aout->obj.parent);
+    var_DelCallback(aout, "device", var_CopyDevice, vlc_object_parent(aout));
+    var_DelCallback(aout, "mute", var_Copy, vlc_object_parent(aout));
     var_SetFloat (aout, "volume", -1.f);
-    var_DelCallback (aout, "volume", var_Copy, aout->obj.parent);
+    var_DelCallback(aout, "volume", var_Copy, vlc_object_parent(aout));
     var_DelCallback (aout, "stereo-mode", StereoModeCallback, NULL);
-    vlc_object_release (aout);
+    vlc_object_delete(aout);
 }
 
 /**

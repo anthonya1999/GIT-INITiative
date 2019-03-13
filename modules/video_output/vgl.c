@@ -28,15 +28,20 @@
 #include <vlc_vout_display.h>
 #include <vlc_opengl.h>
 
+#include <vlc/libvlc.h>
+#include <vlc/libvlc_picture.h>
+#include <vlc/libvlc_media.h>
+#include <vlc/libvlc_renderer_discoverer.h>
+#include <vlc/libvlc_media_player.h>
 
 struct vout_display_sys_t
 {
-    void (*cleanupCb)(void* opaque);
-    bool (*setupCb)(void* opaque);
-    void (*resizeCb)(void* opaque, unsigned, unsigned);
-    void (*swapCb)(void* opaque);
-    bool (*makeCurrentCb)(void* opaque, bool);
-    void* (*getProcAddressCb)(void* opaque, const char *name);
+    libvlc_video_cleanup_cb cleanupCb;
+    libvlc_video_setup_cb setupCb;
+    libvlc_video_update_output_cb resizeCb;
+    libvlc_video_swap_cb swapCb;
+    libvlc_video_makeCurrent_cb makeCurrentCb;
+    libvlc_video_getProcAddress_cb getProcAddressCb;
 
     void* opaque;
     unsigned width;
@@ -85,9 +90,8 @@ static void Resize(vlc_gl_t * gl, unsigned w, unsigned h)
     sys->height = h;
 }
 
-static void Close(vlc_object_t *object)
+static void Close(vlc_gl_t *gl)
 {
-    vlc_gl_t *gl = (vlc_gl_t *)object;
     vout_display_sys_t *sys = gl->sys;
     if( sys->cleanupCb )
         sys->cleanupCb(sys->opaque);
@@ -103,13 +107,12 @@ static void Close(vlc_object_t *object)
         }                                                          \
     } while( 0 )
 
-static int Open(vlc_object_t *object)
+static int Open(vlc_gl_t *gl, unsigned width, unsigned height)
 {
-    vlc_gl_t *gl = (vlc_gl_t *)object;
     vout_display_sys_t * sys;
 
     /* Allocate structure */
-    gl->sys = sys = vlc_obj_calloc(object, 1, sizeof(*sys));
+    gl->sys = sys = vlc_obj_calloc(VLC_OBJECT(gl), 1, sizeof(*sys));
     if( !sys )
         return VLC_ENOMEM;
 
@@ -134,6 +137,7 @@ static int Open(vlc_object_t *object)
             return VLC_EGENERIC;
         }
 
+    Resize(gl, width, height);
     return VLC_SUCCESS;
 }
 

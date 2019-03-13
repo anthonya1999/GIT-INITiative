@@ -65,7 +65,7 @@ static void VoutDisplayEvent(vout_display_t *vd, int event, va_list args)
  *
  *****************************************************************************/
 int vout_OpenWrapper(vout_thread_t *vout,
-                     const char *splitter_name, vout_display_cfg_t *cfg)
+                     const char *splitter_name, const vout_display_cfg_t *cfg)
 {
     vout_thread_sys_t *sys = vout->p;
     vout_display_t *vd;
@@ -153,14 +153,14 @@ int vout_OpenWrapper(vout_thread_t *vout,
     return VLC_SUCCESS;
 
 error:
-    vout_DeleteDisplay(vd, cfg);
+    vout_display_Delete(vd);
     return VLC_EGENERIC;
 }
 
 /*****************************************************************************
  *
  *****************************************************************************/
-void vout_CloseWrapper(vout_thread_t *vout, vout_display_cfg_t *cfg)
+void vout_CloseWrapper(vout_thread_t *vout)
 {
     vout_thread_sys_t *sys = vout->p;
 
@@ -176,7 +176,7 @@ void vout_CloseWrapper(vout_thread_t *vout, vout_display_cfg_t *cfg)
 #endif
     sys->decoder_pool = NULL; /* FIXME remove */
 
-    vout_DeleteDisplay(sys->display, cfg);
+    vout_display_Delete(sys->display);
 }
 
 #ifdef _WIN32

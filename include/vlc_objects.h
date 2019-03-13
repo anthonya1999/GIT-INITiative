@@ -28,6 +28,8 @@
  * Common VLC object defintions
  */
 
+struct vlc_logger;
+
 /**
  * VLC object common members
  *
@@ -37,20 +39,9 @@
  */
 struct vlc_common_members
 {
-    /** Object type name
-     *
-     * A constant string identifying the type of the object (for logging)
-     */
-    const char *object_type;
+    struct vlc_logger *logger;
 
-    /** Log messages header
-     *
-     * Human-readable header for log messages. This is not thread-safe and
-     * only used by VLM and Lua interfaces.
-     */
-    char *header;
-
-    int  flags;
+    bool no_interact;
 
     /** Module probe flag
      *
@@ -58,19 +49,6 @@ struct vlc_common_members
      * See \ref module_need().
      */
     bool force;
-
-    /** LibVLC instance
-     *
-     * Root VLC object of the objects tree that this object belongs in.
-     */
-    libvlc_int_t *libvlc;
-
-    /** Parent object
-     *
-     * The parent VLC object in the objects tree. For the root (the LibVLC
-     * instance) object, this is NULL.
-     */
-    vlc_object_t *parent;
 };
 
 /**
@@ -90,10 +68,6 @@ struct vlc_common_members
 # define VLC_OBJECT(x) ((vlc_object_t *)(x))
 #endif
 
-/* Object flags */
-#define OBJECT_FLAGS_QUIET       0x0002
-#define OBJECT_FLAGS_NOINTERACT  0x0004
-
 /*****************************************************************************
  * The vlc_object_t type. Yes, it's that simple :-)
  *****************************************************************************/
@@ -109,15 +83,84 @@ struct libvlc_int_t
     struct vlc_common_members obj;
 };
 
-/*****************************************************************************
- * Prototypes
- *****************************************************************************/
+/**
+ * Allocates and initializes a vlc object.
+ *
+ * @param i_size object byte size
+ *
+ * @return the new object, or NULL on error.
+ */
 VLC_API void *vlc_object_create( vlc_object_t *, size_t ) VLC_MALLOC VLC_USED;
 VLC_API vlc_object_t *vlc_object_find_name( vlc_object_t *, const char * ) VLC_USED VLC_DEPRECATED;
-VLC_API void * vlc_object_hold( vlc_object_t * );
-VLC_API void vlc_object_release( vlc_object_t * );
+
+/**
+ * Adds a weak reference to an object.
+ *
+ * This atomically increments the reference count of an object.
+ */
+VLC_API void * vlc_object_hold(vlc_object_t *obj);
+
+/**
+ * Removes a weak reference to an object.
+ *
+ * This atomically decrements the reference count.
+ * If the count reaches zero, the object is destroyed.
+ */
+VLC_API void vlc_object_release(vlc_object_t *obj);
+
+/**
+ * Drops the strong reference to an object.
+ *
+ * This removes the initial strong reference to a given object. This must be
+ * called exactly once per allocated object after it is no longer needed,
+ * matching vlc_object_create() or vlc_custom_create().
+ */
+static inline void vlc_object_delete(vlc_object_t *obj)
+{
+    vlc_object_release(obj);
+}
+#define vlc_object_delete(obj) vlc_object_delete(VLC_OBJECT(obj))
+
 VLC_API size_t vlc_list_children(vlc_object_t *, vlc_object_t **, size_t) VLC_USED;
-VLC_API char *vlc_object_get_name( const vlc_object_t * ) VLC_USED;
+
+/**
+ * Returns the object type name.
+ *
+ * This returns a nul-terminated string identifying the object type.
+ * The string is valid for at least as long as the object reference.
+ *
+ * \param obj object whose type name to get
+ */
+VLC_API const char *vlc_object_typename(const vlc_object_t *obj) VLC_USED;
+
+/**
+ * Gets the parent of an object.
+ *
+ * \return the parent object (NULL if none)
+ *
+ * \note The returned parent object pointer is valid as long as the child is.
+ */
+VLC_API vlc_object_t *vlc_object_parent(vlc_object_t *obj) VLC_USED;
+#define vlc_object_parent(o) vlc_object_parent(VLC_OBJECT(o))
+
+static inline struct vlc_logger *vlc_object_logger(vlc_object_t *obj)
+{
+    return obj->obj.logger;
+}
+#define vlc_object_logger(o) vlc_object_logger(VLC_OBJECT(o))
+
+/**
+ * Tries to get the name of module bound to an object.
+ *
+ * \warning This function is intrinsically race-prone, as a module may be
+ * bound or unbound asynchronously by another thread.
+ * Do not trust the result for any purpose other than debugging/tracing.
+ *
+ * \return Normally, this returns a heap-allocated nul-terminated string
+ * which is the name of the module. If no module are bound to the object, it
+ * returns NULL. It also returns NULL on error.
+ */
+#define vlc_object_get_name(obj) var_GetString(obj, "module-name")
 
 #define vlc_object_create(a,b) vlc_object_create( VLC_OBJECT(a), b )
 
@@ -129,6 +172,56 @@ VLC_API char *vlc_object_get_name( const vlc_object_t * ) VLC_USED;
 
 #define vlc_object_release(a) \
     vlc_object_release( VLC_OBJECT(a) )
+
+VLC_USED
+static inline libvlc_int_t *vlc_object_instance(vlc_object_t *obj)
+{
+    vlc_object_t *parent;
+
+    do
+        parent = obj;
+    while ((obj = vlc_object_parent(obj)) != NULL);
+
+    return (libvlc_int_t *)parent;
+}
+#define vlc_object_instance(o) vlc_object_instance(VLC_OBJECT(o))
+
+/* Here for backward compatibility. TODO: Move to <vlc_input.h>! */
+static inline input_thread_t *input_Hold(input_thread_t *input)
+{
+    vlc_object_hold((vlc_object_t *)input);
+    return input;
+}
+
+static inline void input_Release(input_thread_t *input)
+{
+    vlc_object_release((vlc_object_t *)input);
+}
+
+/* Here for backward compatibility. TODO: Move to <vlc_vout.h>! */
+static inline vout_thread_t *vout_Hold(vout_thread_t *vout)
+{
+    vlc_object_hold((vlc_object_t *)vout);
+    return vout;
+}
+
+static inline void vout_Release(vout_thread_t *vout)
+{
+    vlc_object_release((vlc_object_t *)vout);
+}
+
+/* Here for backward compatibility. TODO: Move to <vlc_aout.h>! */
+static inline audio_output_t *aout_Hold(audio_output_t *aout)
+{
+    vlc_object_hold((vlc_object_t *)aout);
+    return aout;
+}
+
+static inline void aout_Release(audio_output_t *aout)
+{
+    vlc_object_release((vlc_object_t *)aout);
+}
+
 
 /**
  * @defgroup objres Object resources

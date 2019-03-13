@@ -679,6 +679,9 @@ NetOpenPanel::NetOpenPanel( QWidget *_parent, intf_thread_t *_p_intf ) :
 
     /* Use a simple validator for URLs */
     ui.urlComboBox->setValidator( new UrlValidator( this ) );
+
+    /* QComboBox is by default case insensitive when editable */
+    ui.urlComboBox->completer()->setCaseSensitivity( Qt::CaseSensitive );
     ui.urlComboBox->setFocus();
 }
 
@@ -852,7 +855,7 @@ void CaptureOpenPanel::initialize()
     v4l2PropLayout->addWidget( v4l2StdLabel, 0 , 0 );
 
     v4l2StdBox = new QComboBox;
-    setfillVLCConfigCombo( "v4l2-standard", p_intf, v4l2StdBox );
+    setfillVLCConfigCombo( "v4l2-standard", v4l2StdBox );
     v4l2PropLayout->addWidget( v4l2StdBox, 0 , 1 );
     v4l2PropLayout->addItem( new QSpacerItem( 20, 20, QSizePolicy::Expanding ),
             1, 0, 3, 2 );
@@ -997,7 +1000,7 @@ void CaptureOpenPanel::initialize()
     dvbPropLayout->addWidget( dvbBandLabel, 2, 0 );
 
     dvbBandBox = new QComboBox;
-    setfillVLCConfigCombo( "dvb-bandwidth", p_intf, dvbBandBox );
+    setfillVLCConfigCombo( "dvb-bandwidth", dvbBandBox );
     dvbPropLayout->addWidget( dvbBandBox, 2, 1 );
 
     dvbBandLabel->hide();
@@ -1073,7 +1076,7 @@ void CaptureOpenPanel::initialize()
     pvrPropLayout->addWidget( pvrNormLabel, 0, 0 );
 
     pvrNormBox = new QComboBox;
-    setfillVLCConfigCombo( "v4l2-standard", p_intf, pvrNormBox );
+    setfillVLCConfigCombo( "v4l2-standard", pvrNormBox );
     pvrPropLayout->addWidget( pvrNormBox, 0, 1 );
 
     QLabel *pvrFreqLabel = new QLabel( qtr( "Frequency" ) );

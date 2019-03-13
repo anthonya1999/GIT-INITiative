@@ -170,7 +170,7 @@ static void *Run( void *data )
     free( p_intf->p_sys->psz_service );
 
     /* Make sure we exit (In case other interfaces have been spawned) */
-    libvlc_Quit( p_intf->obj.libvlc );
+    libvlc_Quit( vlc_object_instance(p_intf) );
     return NULL;
 }
 
@@ -340,7 +340,7 @@ static void WINAPI ServiceDispatch( DWORD numArgs, char **args )
         if( asprintf( &psz_temp, "%s,none", psz_module ) != -1 )
         {
             /* Try to create the interface */
-            if( intf_Create( pl_Get(p_intf), psz_temp ) )
+            if( intf_Create( vlc_object_instance(p_intf), psz_temp ) )
             {
                 msg_Err( p_intf, "interface \"%s\" initialization failed",
                          psz_temp );

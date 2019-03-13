@@ -69,7 +69,6 @@
 #include "libvlc.h"
 #include "playlist_legacy/playlist_internal.h"
 #include "misc/variables.h"
-#include "input/player.h"
 
 #include <vlc_vlm.h>
 
@@ -95,6 +94,7 @@ libvlc_int_t * libvlc_InternalCreate( void )
         return NULL;
 
     priv = libvlc_priv (p_libvlc);
+    priv->interfaces = NULL;
     priv->playlist = NULL;
     priv->main_playlist = NULL;
     priv->p_vlm = NULL;
@@ -103,50 +103,6 @@ libvlc_int_t * libvlc_InternalCreate( void )
     vlc_ExitInit( &priv->exit );
 
     return p_libvlc;
-}
-
-static void
-PlaylistConfigureFromVariables(vlc_playlist_t *playlist, vlc_object_t *obj)
-{
-    enum vlc_playlist_playback_order order;
-    if (var_InheritBool(obj, "random"))
-        order = VLC_PLAYLIST_PLAYBACK_ORDER_RANDOM;
-    else
-        order = VLC_PLAYLIST_PLAYBACK_ORDER_NORMAL;
-
-    /* repeat = repeat current; loop = repeat all */
-    enum vlc_playlist_playback_repeat repeat;
-    if (var_InheritBool(obj, "repeat"))
-        repeat = VLC_PLAYLIST_PLAYBACK_REPEAT_CURRENT;
-    else if (var_InheritBool(obj, "loop"))
-        repeat = VLC_PLAYLIST_PLAYBACK_REPEAT_ALL;
-    else
-        repeat = VLC_PLAYLIST_PLAYBACK_REPEAT_NONE;
-
-    enum vlc_player_media_stopped_action media_stopped_action;
-    if (var_InheritBool(obj, "play-and-exit"))
-        media_stopped_action = VLC_PLAYER_MEDIA_STOPPED_EXIT;
-    else if (var_InheritBool(obj, "play-and-stop"))
-        media_stopped_action = VLC_PLAYER_MEDIA_STOPPED_STOP;
-    else if (var_InheritBool(obj, "play-and-pause"))
-        media_stopped_action = VLC_PLAYER_MEDIA_STOPPED_PAUSE;
-    else
-        media_stopped_action = VLC_PLAYER_MEDIA_STOPPED_CONTINUE;
-
-    bool start_paused = var_InheritBool(obj, "start-paused");
-
-    vlc_playlist_Lock(playlist);
-    vlc_playlist_SetPlaybackOrder(playlist, order);
-    vlc_playlist_SetPlaybackRepeat(playlist, repeat);
-
-    vlc_player_t *player = vlc_playlist_GetPlayer(playlist);
-
-    /* the playlist and the player share the same lock, and this is not an
-     * implementation detail */
-    vlc_player_SetMediaStoppedAction(player, media_stopped_action);
-    vlc_player_SetStartPaused(player, start_paused);
-
-    vlc_playlist_Unlock(playlist);
 }
 
 /**
@@ -334,12 +290,6 @@ int libvlc_InternalInit( libvlc_int_t *p_libvlc, int i_argc,
     }
 #endif
 
-    priv->main_playlist = vlc_playlist_New(VLC_OBJECT(p_libvlc));
-    if (unlikely(!priv->main_playlist))
-        goto error;
-
-    PlaylistConfigureFromVariables(priv->main_playlist, VLC_OBJECT(p_libvlc));
-
     /*
      * Load background interfaces
      */
@@ -479,8 +429,8 @@ void libvlc_InternalCleanup( libvlc_int_t *p_libvlc )
     if( !var_InheritBool( p_libvlc, "ignore-config" ) )
         config_AutoSaveConfigFile( VLC_OBJECT(p_libvlc) );
 
+    vlc_LogDestroy(p_libvlc->obj.logger);
     /* Free module bank. It is refcounted, so we call this each time  */
-    vlc_LogDeinit (p_libvlc);
     module_EndBank (true);
 #if defined(_WIN32) || defined(__OS2__)
     system_End( );
@@ -501,7 +451,7 @@ void libvlc_InternalDestroy( libvlc_int_t *p_libvlc )
     vlc_ExitDestroy( &priv->exit );
 
     assert( atomic_load(&(vlc_internals(p_libvlc)->refs)) == 1 );
-    vlc_object_release( p_libvlc );
+    vlc_object_delete(p_libvlc);
 }
 
 /*****************************************************************************

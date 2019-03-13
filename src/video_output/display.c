@@ -36,6 +36,7 @@
 #include <vlc_modules.h>
 #include <vlc_filter.h>
 #include <vlc_picture_pool.h>
+#include <vlc_codec.h>
 
 #include <libvlc.h>
 
@@ -64,7 +65,7 @@ static picture_t *VideoBufferNew(filter_t *filter)
  *
  *****************************************************************************/
 
-static int vout_display_start(void *func, va_list ap)
+static int vout_display_start(void *func, bool forced, va_list ap)
 {
     vout_display_open_cb activate = func;
     vout_display_t *vd = va_arg(ap, vout_display_t *);
@@ -76,10 +77,13 @@ static int vout_display_start(void *func, va_list ap)
     video_format_Copy(fmtp, &vd->source);
     fmtp->i_sar_num = 0;
     fmtp->i_sar_den = 0;
+    vd->obj.force = forced; /* TODO: pass to activate() instead? */
 
     int ret = activate(vd, cfg, fmtp, context);
-    if (ret != VLC_SUCCESS)
+    if (ret != VLC_SUCCESS) {
         video_format_Clean(fmtp);
+        vlc_objres_clear(VLC_OBJECT(vd));
+    }
     return ret;
 }
 
@@ -294,6 +298,9 @@ typedef struct {
     atomic_bool reset_pictures;
 #endif
     picture_pool_t *pool;
+
+    /* temporary: must come from decoder module */
+    vlc_video_context video_context;
 } vout_display_priv_t;
 
 static const struct filter_video_callbacks vout_display_filter_cbs = {
@@ -362,14 +369,6 @@ static int VoutDisplayCreateRender(vout_display_t *vd)
     return ret;
 }
 
-static void VoutDisplayDestroyRender(vout_display_t *vd)
-{
-    vout_display_priv_t *osys = container_of(vd, vout_display_priv_t, display);
-
-    if (osys->converters)
-        filter_chain_Delete(osys->converters);
-}
-
 void vout_display_SendEventPicturesInvalid(vout_display_t *vd)
 {
 #ifdef _WIN32
@@ -426,7 +425,7 @@ bool vout_IsDisplayFiltered(vout_display_t *vd)
     return osys->converters == NULL || !filter_chain_IsEmpty(osys->converters);
 }
 
-picture_t *vout_FilterDisplay(vout_display_t *vd, picture_t *picture)
+picture_t *vout_ConvertForDisplay(vout_display_t *vd, picture_t *picture)
 {
     vout_display_priv_t *osys = container_of(vd, vout_display_priv_t, display);
 
@@ -460,7 +459,7 @@ picture_t *vout_display_Prepare(vout_display_t *vd, picture_t *picture,
                                 subpicture_t *subpic, vlc_tick_t date)
 {
     assert(subpic == NULL); /* TODO */
-    picture = vout_FilterDisplay(vd, picture);
+    picture = vout_ConvertForDisplay(vd, picture);
 
     if (picture != NULL && vd->prepare != NULL)
         vd->prepare(vd, picture, subpic, date);
@@ -478,6 +477,11 @@ void vout_FilterFlush(vout_display_t *vd)
 static void vout_display_Reset(vout_display_t *vd)
 {
     vout_display_priv_t *osys = container_of(vd, vout_display_priv_t, display);
+
+    if (osys->converters != NULL) {
+        filter_chain_Delete(osys->converters);
+        osys->converters = NULL;
+    }
 
     if (osys->pool != NULL) {
         picture_pool_Release(osys->pool);
@@ -653,21 +657,6 @@ void vout_SetDisplayZoom(vout_display_t *vd, unsigned num, unsigned den)
 {
     vout_display_priv_t *osys = container_of(vd, vout_display_priv_t, display);
 
-    if (num != 0 && den != 0) {
-        vlc_ureduce(&num, &den, num, den, 0);
-    } else {
-        num = 1;
-        den = 1;
-    }
-
-    if (10 * num <= den) {
-        num = 1;
-        den = 10;
-    } else if (num >= 10 * den) {
-        num = 10;
-        den = 1;
-    }
-
     if (!osys->cfg.is_display_filled
      && osys->cfg.zoom.num == num && osys->cfg.zoom.den == den)
         return; /* nothing to do */
@@ -783,15 +772,16 @@ vout_display_t *vout_display_New(vlc_object_t *parent,
     vd->sys = NULL;
     vd->owner = *owner;
 
+    osys->video_context.device = vlc_decoder_device_Create(vd->cfg->window);
+    vlc_video_context *video_context = osys->video_context.device ?
+        &osys->video_context : NULL;
+
     vd->module = vlc_module_load(vd, "vout display", module,
                                  module && *module != '\0',
                                  vout_display_start, vd, &osys->cfg,
-                                 &vd->fmt, (vlc_video_context *)NULL);
+                                 &vd->fmt, video_context);
     if (vd->module == NULL)
         goto error;
-
-    vout_window_SetSize(osys->cfg.window,
-                        osys->cfg.display.width, osys->cfg.display.height);
 
 #if defined(_WIN32) || defined(__OS2__)
     if ((var_GetBool(parent, "fullscreen")
@@ -806,42 +796,41 @@ vout_display_t *vout_display_New(vlc_object_t *parent,
 #endif
 
     if (VoutDisplayCreateRender(vd)) {
-        if (vd->module != NULL)
-            vlc_module_unload(vd, vd->module, vout_display_stop, vd);
-
+        if (vd->module != NULL) {
+            vlc_module_unload(vd->module, vout_display_stop, vd);
+            vlc_objres_clear(VLC_OBJECT(vd));
+        }
         video_format_Clean(&vd->fmt);
         goto error;
     }
     return vd;
 error:
     video_format_Clean(&vd->source);
-    vlc_object_release(vd);
+    if (osys->video_context.device)
+        vlc_decoder_device_Release(osys->video_context.device);
+    vlc_object_delete(vd);
     return NULL;
-}
-
-void vout_DeleteDisplay(vout_display_t *vd, vout_display_cfg_t *cfg)
-{
-    vout_display_priv_t *osys = container_of(vd, vout_display_priv_t, display);
-
-    if (cfg != NULL)
-        *cfg = osys->cfg;
-
-    vout_display_Delete(vd);
 }
 
 void vout_display_Delete(vout_display_t *vd)
 {
     vout_display_priv_t *osys = container_of(vd, vout_display_priv_t, display);
 
-    VoutDisplayDestroyRender(vd);
+    if (osys->converters != NULL)
+        filter_chain_Delete(osys->converters);
 
     if (osys->pool != NULL)
         picture_pool_Release(osys->pool);
 
-    if (vd->module != NULL)
-        vlc_module_unload(vd, vd->module, vout_display_stop, vd);
+    if (vd->module != NULL) {
+        vlc_module_unload(vd->module, vout_display_stop, vd);
+        vlc_objres_clear(VLC_OBJECT(vd));
+    }
+
+    if (osys->video_context.device)
+        vlc_decoder_device_Release(osys->video_context.device);
 
     video_format_Clean(&vd->source);
     video_format_Clean(&vd->fmt);
-    vlc_object_release(vd);
+    vlc_object_delete(vd);
 }

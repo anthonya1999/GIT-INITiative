@@ -73,8 +73,8 @@ static int video_update_format_decoder( decoder_t *p_dec )
         return 0;
     }
 
-    video_format_Clean( &id->decoder_out.video );
-    video_format_Copy( &id->decoder_out.video, &p_dec->fmt_out.video );
+    es_format_Clean( &id->decoder_out );
+    es_format_Copy( &id->decoder_out, &p_dec->fmt_out );
 
     /* crap, decoders resetting the whole fmtout... */
     es_format_SetMeta( &id->decoder_out, &p_dec->fmt_in );
@@ -384,8 +384,8 @@ static picture_t * RenderSubpictures( sout_stream_t *p_stream, sout_stream_id_sy
     }
 
     subpicture_t *p_subpic = spu_Render( id->p_spu, NULL, &fmt,
-                                         &outfmt,
-                                         p_pic->date, p_pic->date, false, false );
+                                         &outfmt, vlc_tick_now(), p_pic->date, 1.f,
+                                         false, false );
 
     /* Overlay subpicture */
     if( p_subpic )

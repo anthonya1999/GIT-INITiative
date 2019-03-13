@@ -33,13 +33,13 @@
  * Preamble
  *****************************************************************************/
 
-#import <Cocoa/Cocoa.h>
-#import <OpenGL/OpenGL.h>
-#import <dlfcn.h>
-
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
+
+#import <Cocoa/Cocoa.h>
+#import <OpenGL/OpenGL.h>
+#import <dlfcn.h>
 
 #include <vlc_common.h>
 #include <vlc_plugin.h>
@@ -85,7 +85,7 @@ vlc_module_end ()
 /**
  * Obj-C protocol declaration that drawable-nsobject should follow
  */
-@protocol VLCOpenGLVideoViewEmbedding <NSObject>
+@protocol VLCVideoViewEmbedding <NSObject>
 - (void)addVoutSubview:(NSView *)view;
 - (void)removeVoutSubview:(NSView *)view;
 @end
@@ -103,7 +103,7 @@ vlc_module_end ()
 struct vout_display_sys_t
 {
     VLCOpenGLVideoView *glView;
-    id<VLCOpenGLVideoViewEmbedding> container;
+    id<VLCVideoViewEmbedding> container;
 
     vout_window_t *embed;
     vlc_gl_t *gl;
@@ -151,7 +151,7 @@ static int Open (vout_display_t *vd, const vout_display_cfg_t *cfg,
         sys->vgl = NULL;
         sys->gl = NULL;
 
-        var_Create(vd->obj.parent, "macosx-glcontext", VLC_VAR_ADDRESS);
+        var_Create(vlc_object_parent(vd), "macosx-glcontext", VLC_VAR_ADDRESS);
 
         /* Get the drawable object */
         id container = var_CreateGetAddress (vd, "drawable-nsobject");
@@ -196,7 +196,7 @@ static int Open (vout_display_t *vd, const vout_display_cfg_t *cfg,
                                           withObject:[NSValue valueWithPointer:parentView]
                                        waitUntilDone:NO];
         } else {
-            msg_Err(vd, "Invalid drawable-nsobject object. drawable-nsobject must either be an NSView or comply to the @protocol VLCOpenGLVideoViewEmbedding.");
+            msg_Err(vd, "Invalid drawable-nsobject object. drawable-nsobject must either be an NSView or comply to the @protocol VLCVideoViewEmbedding.");
             goto error;
         }
 
@@ -209,7 +209,7 @@ static int Open (vout_display_t *vd, const vout_display_cfg_t *cfg,
         struct gl_sys *glsys = sys->gl->sys = malloc(sizeof(struct gl_sys));
         if( unlikely( !sys->gl->sys ) )
         {
-            vlc_object_release(sys->gl);
+            vlc_object_delete(sys->gl);
             goto error;
         }
         glsys->locked_ctx = NULL;
@@ -219,7 +219,7 @@ static int Open (vout_display_t *vd, const vout_display_cfg_t *cfg,
         sys->gl->swap = OpenglSwap;
         sys->gl->getProcAddress = OurGetProcAddress;
 
-        var_SetAddress(vd->obj.parent, "macosx-glcontext",
+        var_SetAddress(vlc_object_parent(vd), "macosx-glcontext",
                        [[sys->glView openGLContext] CGLContextObj]);
 
         const vlc_fourcc_t *subpicture_chromas;
@@ -230,7 +230,7 @@ static int Open (vout_display_t *vd, const vout_display_cfg_t *cfg,
             goto error;
         }
         sys->vgl = vout_display_opengl_New (fmt, &subpicture_chromas, sys->gl,
-                                            &cfg->viewpoint);
+                                            &cfg->viewpoint, context);
         vlc_gl_ReleaseCurrent(sys->gl);
         if (!sys->vgl) {
             msg_Err(vd, "Error while initializing opengl display.");
@@ -248,7 +248,6 @@ static int Open (vout_display_t *vd, const vout_display_cfg_t *cfg,
         /* */
         vout_window_ReportSize(sys->embed, fmt->i_visible_width, fmt->i_visible_height);
 
-        (void) context;
         return VLC_SUCCESS;
 
     error:
@@ -279,7 +278,7 @@ static void Close(vout_display_t *vd)
                                       withObject:nil
                                    waitUntilDone:NO];
 
-        var_Destroy(vd->obj.parent, "macosx-glcontext");
+        var_Destroy(vlc_object_parent(vd), "macosx-glcontext");
         if (sys->vgl != NULL)
         {
             vlc_gl_MakeCurrent(sys->gl);
@@ -291,7 +290,7 @@ static void Close(vout_display_t *vd)
         {
             assert(((struct gl_sys *)sys->gl->sys)->locked_ctx == NULL);
             free(sys->gl->sys);
-            vlc_object_release(sys->gl);
+            vlc_object_delete(sys->gl);
         }
 
         [sys->glView release];

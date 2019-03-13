@@ -45,6 +45,8 @@
 #include <vlc_aout.h>
 #include <vlc_vout.h>
 
+#include "clock/clock.h"
+
 static const char *const ppsz_snap_formats[] =
 { "png", "jpg", "tiff" };
 
@@ -377,10 +379,6 @@ static const char *const ppsz_pos_descriptions[] =
     "VLC can avoid creating window caption, frames, etc... around the video" \
     ", giving a \"minimal\" window.")
 
-#define VIDEO_SPLITTER_TEXT N_("Video splitter module")
-#define VIDEO_SPLITTER_LONGTEXT N_( \
-    "This adds video splitters like clone or wall" )
-
 #define VIDEO_FILTER_TEXT N_("Video filter module")
 #define VIDEO_FILTER_LONGTEXT N_( \
     "This adds post-processing filters to enhance the " \
@@ -531,6 +529,17 @@ static const char *const ppsz_pos_descriptions[] =
     "This defines the maximum input delay jitter that the synchronization " \
     "algorithms should try to compensate (in milliseconds)." )
 
+#define CLOCK_MASTER_TEXT N_("Clock master source")
+
+static const int pi_clock_master_values[] = {
+    VLC_CLOCK_MASTER_AUDIO,
+    VLC_CLOCK_MASTER_MONOTONIC,
+};
+static const char *const ppsz_clock_master_descriptions[] = {
+    N_("Audio"),
+    N_("Monotonic")
+};
+
 #define NETSYNC_TEXT N_("Network synchronisation" )
 #define NETSYNC_LONGTEXT N_( "This allows you to remotely " \
         "synchronise clocks for server and client. The detailed settings " \
@@ -636,6 +645,11 @@ static const char *const ppsz_prefres[] = {
     N_("Low Definition (360 lines)"),
     N_("Very Low Definition (240 lines)"),
 };
+
+#define INPUT_LOWDELAY_TEXT N_("Low delay mode")
+#define INPUT_LOWDELAY_LONGTEXT N_(\
+    "Try to minimize delay along decoding chain."\
+    "Might break with non compliant streams.")
 
 #define INPUT_REPEAT_TEXT N_("Input repetitions")
 #define INPUT_REPEAT_LONGTEXT N_( \
@@ -934,6 +948,8 @@ static const char *const ppsz_prefres[] = {
 #define ENCODER_LONGTEXT N_( \
     "This allows you to select a list of encoders that VLC will use in " \
     "priority.")
+
+#define DEC_DEV_TEXT N_("Preferred decoder hardware device")
 
 /*****************************************************************************
  * Sout
@@ -1780,6 +1796,9 @@ vlc_module_begin ()
                  INPUT_PREFERREDRESOLUTION_LONGTEXT, false )
         change_safe ()
         change_integer_list( pi_prefres, ppsz_prefres )
+    add_bool( "low-delay", 0, INPUT_LOWDELAY_TEXT,
+              INPUT_LOWDELAY_LONGTEXT, true )
+        change_safe ()
 
     set_section( N_( "Playback control" ) , NULL)
     add_integer( "input-repeat", 0,
@@ -1942,6 +1961,9 @@ vlc_module_begin ()
     add_integer( "clock-jitter", 5000, CLOCK_JITTER_TEXT,
               CLOCK_JITTER_LONGTEXT, true )
         change_safe()
+    add_integer( "clock-master", VLC_CLOCK_MASTER_DEFAULT,
+                 CLOCK_MASTER_TEXT, NULL, true )
+        change_integer_list( pi_clock_master_values, ppsz_clock_master_descriptions )
 
     add_bool( "network-synchronisation", false, NETSYNC_TEXT,
               NETSYNC_LONGTEXT, true )
@@ -1967,6 +1989,7 @@ vlc_module_begin ()
                 CODEC_LONGTEXT, true )
     add_string( "encoder",  NULL, ENCODER_TEXT,
                 ENCODER_LONGTEXT, true )
+    add_string( "dec-dev", NULL, DEC_DEV_TEXT, NULL, true )
 
     set_subcategory( SUBCAT_INPUT_ACCESS )
     add_category_hint(N_("Input"), INPUT_CAT_LONGTEXT)
@@ -2058,8 +2081,10 @@ vlc_module_begin ()
 #ifdef HAVE_DYNAMIC_PLUGINS
     add_bool( "plugins-cache", true, PLUGINS_CACHE_TEXT,
               PLUGINS_CACHE_LONGTEXT, true )
+        change_volatile ()
     add_bool( "plugins-scan", true, PLUGINS_SCAN_TEXT,
               PLUGINS_SCAN_LONGTEXT, true )
+        change_volatile ()
     add_obsolete_string( "plugin-path" ) /* since 2.0.0 */
 #endif
     add_obsolete_string( "data-path" ) /* since 2.1.0 */

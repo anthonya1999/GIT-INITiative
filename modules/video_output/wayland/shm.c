@@ -53,8 +53,6 @@ struct vout_display_sys_t
 
     size_t active_buffers;
 
-    int x;
-    int y;
     unsigned display_width;
     unsigned display_height;
     bool use_buffer_transform;
@@ -138,8 +136,6 @@ static void Prepare(vout_display_t *vd, picture_t *pic, subpicture_t *subpic,
     wl_display_flush(display);
 
     sys->active_buffers++;
-    sys->x = 0;
-    sys->y = 0;
 
     (void) subpic;
 }
@@ -292,8 +288,6 @@ static int Open(vout_display_t *vd, const vout_display_cfg_t *cfg,
     sys->shm = NULL;
     sys->viewporter = NULL;
     sys->active_buffers = 0;
-    sys->x = 0;
-    sys->y = 0;
     sys->display_width = cfg->display.width;
     sys->display_height = cfg->display.height;
     sys->use_buffer_transform = false;
@@ -364,6 +358,12 @@ static int Open(vout_display_t *vd, const vout_display_cfg_t *cfg,
     return VLC_SUCCESS;
 
 error:
+    if (sys->viewporter != NULL)
+        wp_viewporter_destroy(sys->viewporter);
+
+    if (sys->shm != NULL)
+        wl_shm_destroy(sys->shm);
+
     if (sys->eventq != NULL)
         wl_event_queue_destroy(sys->eventq);
     free(sys);

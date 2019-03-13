@@ -46,22 +46,30 @@
 
 /*** TLS credentials ***/
 
-static int tls_server_load(void *func, va_list ap)
+static int tls_server_load(void *func, bool forced, va_list ap)
 {
     int (*activate)(vlc_tls_server_t *, const char *, const char *) = func;
     vlc_tls_server_t *crd = va_arg(ap, vlc_tls_server_t *);
     const char *cert = va_arg (ap, const char *);
     const char *key = va_arg (ap, const char *);
 
-    return activate (crd, cert, key);
+    int ret = activate (crd, cert, key);
+    if (ret)
+        vlc_objres_clear(VLC_OBJECT(crd));
+    (void) forced;
+    return ret;
 }
 
-static int tls_client_load(void *func, va_list ap)
+static int tls_client_load(void *func, bool forced, va_list ap)
 {
     int (*activate)(vlc_tls_client_t *) = func;
     vlc_tls_client_t *crd = va_arg(ap, vlc_tls_client_t *);
 
-    return activate (crd);
+    int ret = activate (crd);
+    if (ret)
+        vlc_objres_clear(VLC_OBJECT(crd));
+    (void) forced;
+    return ret;
 }
 
 vlc_tls_server_t *
@@ -80,7 +88,7 @@ vlc_tls_ServerCreate (vlc_object_t *obj, const char *cert_path,
                         tls_server_load, srv, cert_path, key_path) == NULL)
     {
         msg_Err (srv, "TLS server plugin not available");
-        vlc_object_release (srv);
+        vlc_object_delete(srv);
         return NULL;
     }
 
@@ -94,7 +102,7 @@ void vlc_tls_ServerDelete(vlc_tls_server_t *crd)
 
     crd->ops->destroy(crd);
     vlc_objres_clear(VLC_OBJECT(crd));
-    vlc_object_release(crd);
+    vlc_object_delete(crd);
 }
 
 vlc_tls_client_t *vlc_tls_ClientCreate(vlc_object_t *obj)
@@ -108,7 +116,7 @@ vlc_tls_client_t *vlc_tls_ClientCreate(vlc_object_t *obj)
                         tls_client_load, crd) == NULL)
     {
         msg_Err (crd, "TLS client plugin not available");
-        vlc_object_release (crd);
+        vlc_object_delete(crd);
         return NULL;
     }
 
@@ -122,7 +130,7 @@ void vlc_tls_ClientDelete(vlc_tls_client_t *crd)
 
     crd->ops->destroy(crd);
     vlc_objres_clear(VLC_OBJECT(crd));
-    vlc_object_release (crd);
+    vlc_object_delete(crd);
 }
 
 
