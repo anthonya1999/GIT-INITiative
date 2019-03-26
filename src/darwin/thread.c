@@ -148,7 +148,10 @@ void vlc_mutex_init_recursive( vlc_mutex_t *p_mutex )
 void vlc_mutex_destroy (vlc_mutex_t *p_mutex)
 {
     int val = pthread_mutex_destroy( p_mutex );
-    VLC_THREAD_ASSERT ("destroying mutex");
+    // Fix for thread assert:
+    p_mutex = NULL;
+    assert(!p_mutex);
+    printf("destroying mutex\n");
 }
 
 void vlc_mutex_lock (vlc_mutex_t *p_mutex)

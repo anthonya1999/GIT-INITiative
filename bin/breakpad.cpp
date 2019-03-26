@@ -50,9 +50,11 @@ void CheckCrashDump( const wchar_t* path )
     HANDLE h = FindFirstFile( pattern, &data );
     if (h == INVALID_HANDLE_VALUE)
         return;
-    int answer = MessageBox( NULL, L"Ooops: VLC media player just crashed.\n" \
+    /* trac.videolan.org/vlc/ticket/4210 */
+    /* Don't show again checkbox */
+    int answer = SHMessageBoxCheck( NULL, L"Ooops: VLC media player just crashed.\n" \
         "Would you like to send a bug report to the developers team?",
-        L"VLC crash reporting", MB_YESNO);
+        L"VLC crash reporting", MB_YESNO, IDNO, L"VLCErrorGUIDCrashMessage");
     std::map<std::wstring, std::wstring> params;
     params[L"prod"] = L"VLC";
     params[L"ver"] = TEXT(PACKAGE_VERSION);
