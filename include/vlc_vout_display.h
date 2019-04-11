@@ -126,7 +126,7 @@ enum {
      */
     VOUT_DISPLAY_RESET_PICTURES, /* const vout_display_cfg_t *, es_format_t * */
 
-#if defined(_WIN32) || defined(__OS2__)
+#if defined(__OS2__)
     /* Ask the module to acknowledge/refuse the fullscreen state change after
      * being requested (externally or by VOUT_DISPLAY_EVENT_FULLSCREEN */
     VOUT_DISPLAY_CHANGE_FULLSCREEN VLC_DEPRECATED_ENUM,     /* bool fs */
@@ -373,21 +373,6 @@ static inline void vout_display_SendEvent(vout_display_t *vd, int query, ...)
 
 VLC_API void vout_display_SendEventPicturesInvalid(vout_display_t *vd);
 
-#if defined(_WIN32) || defined(__OS2__)
-VLC_DEPRECATED
-static inline void vout_display_SendEventFullscreen(vout_display_t *vd, bool is_fullscreen)
-{
-    if (vout_display_Control(vd, VOUT_DISPLAY_CHANGE_FULLSCREEN,
-                             is_fullscreen) == VLC_SUCCESS)
-        ((vout_display_cfg_t *)vd->cfg)->is_fullscreen = is_fullscreen;
-}
-
-VLC_DEPRECATED
-static inline void vout_display_SendWindowState(vout_display_t *vd, unsigned state)
-{
-    vout_display_Control(vd, VOUT_DISPLAY_CHANGE_WINDOW_STATE, state);
-}
-#endif
 static inline void vout_display_SendEventMousePressed(vout_display_t *vd, int button)
 {
     vout_window_ReportMousePressed(vd->cfg->window, button);
@@ -404,6 +389,19 @@ static inline void vout_display_SendEventViewpointMoved(vout_display_t *vd,
                                                         const vlc_viewpoint_t *vp)
 {
     vout_display_SendEvent(vd, VOUT_DISPLAY_EVENT_VIEWPOINT_MOVED, vp);
+}
+
+/**
+ * Helper function that applies the necessary transforms to the mouse position
+ * and then calls vout_display_SendEventMouseMoved.
+ *
+ * \param vd vout_display_t.
+ * \param m_x Mouse x position (relative to place, origin is top left).
+ * \param m_y Mouse y position (relative to place, origin is top left).
+ */
+static inline void vout_display_SendMouseMovedDisplayCoordinates(vout_display_t *vd, int m_x, int m_y)
+{
+    vout_window_ReportMouseMoved(vd->cfg->window, m_x, m_y);
 }
 
 static inline bool vout_display_cfg_IsWindowed(const vout_display_cfg_t *cfg)
@@ -430,6 +428,13 @@ typedef struct {
     unsigned height;
 } vout_display_place_t;
 
+static inline bool vout_display_PlaceEquals(const vout_display_place_t *p1,
+                                            const vout_display_place_t *p2)
+{
+    return p1->x == p2->x && p1->width == p2->width &&
+            p1->y == p2->y && p1->height == p2->height;
+}
+
 /**
  * Computes how to place a picture inside the display to respect
  * the given parameters.
@@ -450,16 +455,6 @@ VLC_API void vout_display_PlacePicture(vout_display_place_t *place, const video_
  */
 void vout_display_TranslateMouseState(vout_display_t *vd, vlc_mouse_t *video,
                                       const vlc_mouse_t *window);
-
-/**
- * Helper function that applies the necessary transforms to the mouse position
- * and then calls vout_display_SendEventMouseMoved.
- *
- * \param vd vout_display_t.
- * \param m_x Mouse x position (relative to place, origin is top left).
- * \param m_y Mouse y position (relative to place, origin is top left).
- */
-VLC_API void vout_display_SendMouseMovedDisplayCoordinates(vout_display_t *vd, int m_x, int m_y);
 
 /** @} */
 #endif /* VLC_VOUT_DISPLAY_H */

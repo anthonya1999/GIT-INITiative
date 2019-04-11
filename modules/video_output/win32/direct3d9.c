@@ -42,7 +42,6 @@
 #include <vlc_common.h>
 #include <vlc_plugin.h>
 #include <vlc_vout_display.h>
-#include <vlc_charset.h> /* ToT function */
 
 #include <windows.h>
 #include <d3d9.h>
@@ -73,6 +72,10 @@ static void GLConvClose(vlc_object_t *);
 #define HW_BLENDING_TEXT N_("Use hardware blending support")
 #define HW_BLENDING_LONGTEXT N_(\
     "Try to use hardware acceleration for subtitle/OSD blending.")
+#define HW_YUV_TEXT N_("Use hardware YUV->RGB conversions")
+#define HW_YUV_LONGTEXT N_(\
+    "Try to use hardware acceleration for YUV->RGB conversions. " \
+    "This option doesn't have any effect when using overlays.")
 
 #define PIXEL_SHADER_TEXT N_("Pixel Shader")
 #define PIXEL_SHADER_LONGTEXT N_(\
@@ -94,6 +97,7 @@ vlc_module_begin ()
     set_subcategory(SUBCAT_VIDEO_VOUT)
 
     add_bool("direct3d9-hw-blending", true, HW_BLENDING_TEXT, HW_BLENDING_LONGTEXT, true)
+    add_bool("directx-hw-yuv", true, HW_YUV_TEXT, HW_YUV_LONGTEXT, true)
 
     add_string("direct3d9-shader", "", PIXEL_SHADER_TEXT, PIXEL_SHADER_LONGTEXT, true)
         change_string_cb(FindShadersCallback)
@@ -132,13 +136,10 @@ typedef struct
 
 struct vout_display_sys_t
 {
-    vout_display_sys_win32_t sys;
+    vout_display_sys_win32_t sys;       /* only use if sys.event is not NULL */
+    display_win32_area_t     area;
 
     bool allow_hw_yuv;    /* Should we use hardware YUV->RGB conversions */
-    struct {
-        bool is_fullscreen;
-        bool is_on_top;
-    } desktop_save;
 
     // core objects
     d3d9_handle_t           hd3d;
@@ -161,8 +162,6 @@ struct vout_display_sys_t
     bool                    reset_device;
     bool                    lost_not_ready;
     bool                    clear_scene;
-
-    atomic_bool             new_desktop_mode;
 
     /* outside rendering */
     void *outside_opaque;
@@ -207,8 +206,8 @@ static HINSTANCE Direct3D9LoadShaderLibrary(void)
 {
     HINSTANCE instance = NULL;
     for (int i = 43; i > 23; --i) {
-        TCHAR filename[16];
-        _sntprintf(filename, 16, TEXT("D3dx9_%d.dll"), i);
+        WCHAR filename[16];
+        _snwprintf(filename, ARRAYSIZE(filename), TEXT("D3dx9_%d.dll"), i);
         instance = LoadLibrary(filename);
         if (instance)
             break;
@@ -448,7 +447,12 @@ static int Direct3D9ImportPicture(vout_display_t *vd,
 
     /* Copy picture surface into texture surface
      * color space conversion happen here */
-    RECT copy_rect = sys->sys.rect_src_clipped;
+    RECT copy_rect = {
+        .left   = vd->source.i_x_offset,
+        .right  = vd->source.i_x_offset + vd->source.i_visible_width,
+        .top    = vd->source.i_y_offset,
+        .bottom = vd->source.i_y_offset + vd->source.i_visible_height,
+    };
     // On nVidia & AMD, StretchRect will fail if the visible size isn't even.
     // When copying the entire buffer, the margin end up being blended in the actual picture
     // on nVidia (regardless of even/odd dimensions)
@@ -467,8 +471,20 @@ static int Direct3D9ImportPicture(vout_display_t *vd,
 
     /* */
     region->texture = sys->sceneTexture;
-    Direct3D9SetupVertices(region->vertex, &vd->sys->sys.rect_src, &vd->sys->sys.rect_src_clipped,
-                           &vd->sys->sys.rect_dest_clipped, 255, vd->source.orientation);
+    RECT rect_src = {
+        .left   = 0,
+        .right  = vd->source.i_width,
+        .top    = 0,
+        .bottom = vd->source.i_height,
+    };
+    RECT rect_dst = {
+        .left   = 0,
+        .right  = vd->sys->area.place.width,
+        .top    = 0,
+        .bottom = vd->sys->area.place.height,
+    };
+    Direct3D9SetupVertices(region->vertex, &rect_src, &copy_rect,
+                           &rect_dst, 255, vd->source.orientation);
     return VLC_SUCCESS;
 }
 
@@ -877,7 +893,7 @@ static int Direct3D9Reset(vout_display_t *vd, video_format_t *fmtp)
         return VLC_EGENERIC;
     }
 
-    UpdateRects(vd, true);
+    UpdateRects(vd, &sys->area, &sys->sys);
 
     /* re-create them */
     if (Direct3D9CreateResources(vd, fmtp)) {
@@ -885,64 +901,6 @@ static int Direct3D9Reset(vout_display_t *vd, video_format_t *fmtp)
         return VLC_EGENERIC;
     }
     return VLC_SUCCESS;
-}
-
-static void UpdateDesktopMode(vout_display_t *vd)
-{
-    vout_display_sys_t *sys = vd->sys;
-
-    if (sys->sys.use_desktop) {
-        /* Save non-desktop state */
-        sys->desktop_save.is_fullscreen = sys->sys.vdcfg.is_fullscreen;
-        sys->desktop_save.is_on_top     = sys->sys.is_on_top;
-
-        /* Disable fullscreen/on_top while using desktop */
-        if (sys->desktop_save.is_fullscreen)
-            vout_display_SendEventFullscreen(vd, false);
-        if (sys->desktop_save.is_on_top)
-            vout_display_SendWindowState(vd, VOUT_WINDOW_STATE_NORMAL);
-    } else {
-        /* Restore fullscreen/on_top */
-        if (sys->desktop_save.is_fullscreen)
-            vout_display_SendEventFullscreen(vd, true);
-        if (sys->desktop_save.is_on_top)
-            vout_display_SendWindowState(vd, VOUT_WINDOW_STATE_ABOVE);
-    }
-}
-
-static void Manage (vout_display_t *vd)
-{
-    vout_display_sys_t *sys = vd->sys;
-
-    CommonManage(vd);
-
-    /* Desktop mode change */
-    bool prev_desktop = sys->sys.use_desktop;
-    sys->sys.use_desktop = atomic_load( &sys->new_desktop_mode );
-    if (sys->sys.use_desktop != prev_desktop)
-        UpdateDesktopMode(vd);
-
-    /* Position Change */
-    if (sys->sys.changes & DX_POSITION_CHANGE) {
-#if 0 /* need that when bicubic filter is available */
-        RECT rect;
-        UINT width, height;
-
-        GetClientRect(p_sys->sys.hvideownd, &rect);
-        width  = rect.right-rect.left;
-        height = rect.bottom-rect.top;
-
-        if (width != p_sys->pp.BackBufferWidth || height != p_sys->pp.BackBufferHeight)
-        {
-            msg_Dbg(vd, "resizing device back buffers to (%lux%lu)", width, height);
-            // need to reset D3D device to resize back buffer
-            if (VLC_SUCCESS != Direct3D9ResetDevice(vd, width, height))
-                return VLC_EGENERIC;
-        }
-#endif
-        sys->clear_scene = true;
-        sys->sys.changes &= ~DX_POSITION_CHANGE;
-    }
 }
 
 static void Direct3D9ImportSubpicture(vout_display_t *vd,
@@ -1038,15 +996,14 @@ static void Direct3D9ImportSubpicture(vout_display_t *vd,
             msg_Err(vd, "Failed to lock the texture");
         }
 
-        /* Map the subpicture to sys->sys.rect_dest */
-        const RECT video = sys->sys.rect_dest;
-        const float scale_w = (float)(video.right  - video.left) / subpicture->i_original_picture_width;
-        const float scale_h = (float)(video.bottom - video.top)  / subpicture->i_original_picture_height;
+        /* Map the subpicture to sys->sys.sys.place */
+        const float scale_w = (float)(sys->area.place.width)  / subpicture->i_original_picture_width;
+        const float scale_h = (float)(sys->area.place.height) / subpicture->i_original_picture_height;
 
         RECT dst;
-        dst.left   = video.left + scale_w * r->i_x,
+        dst.left   =            scale_w * r->i_x,
         dst.right  = dst.left + scale_w * r->fmt.i_visible_width,
-        dst.top    = video.top  + scale_h * r->i_y,
+        dst.top    =            scale_h * r->i_y,
         dst.bottom = dst.top  + scale_h * r->fmt.i_visible_height;
 
         RECT src;
@@ -1218,9 +1175,31 @@ static void Direct3D9RenderScene(vout_display_t *vd,
 static void Prepare(vout_display_t *vd, picture_t *picture,
                     subpicture_t *subpicture, vlc_tick_t date)
 {
-    Manage(vd);
     VLC_UNUSED(date);
     vout_display_sys_t *sys = vd->sys;
+
+    /* Position Change */
+    if (sys->area.place_changed) {
+#if 0 /* need that when bicubic filter is available */
+        RECT rect;
+        UINT width, height;
+
+        GetClientRect(p_sys->sys.hvideownd, &rect);
+        width  = RECTWidth(rect);
+        height = RECTHeight(rect);
+
+        if (width != p_sys->pp.BackBufferWidth || height != p_sys->pp.BackBufferHeight)
+        {
+            msg_Dbg(vd, "resizing device back buffers to (%lux%lu)", width, height);
+            // need to reset D3D device to resize back buffer
+            if (VLC_SUCCESS != Direct3D9ResetDevice(vd, width, height))
+                return VLC_EGENERIC;
+        }
+#endif
+        sys->clear_scene = true;
+        sys->area.place_changed = false;
+    }
+
     picture_sys_t *p_sys = picture->p_sys;
     IDirect3DSurface9 *surface = p_sys->surface;
     d3d9_device_t *p_d3d9_dev = &sys->d3d_dev;
@@ -1315,14 +1294,18 @@ static void Swap(void *opaque)
 
     // Present the back buffer contents to the display
     // No stretching should happen here !
-    const RECT src = sys->sys.rect_dest_clipped;
-    const RECT dst = sys->sys.rect_dest_clipped;
-
+    RECT src = {
+        .left   = 0,
+        .right  = sys->area.place.width,
+        .top    = 0,
+        .bottom = sys->area.place.height
+    };
+    
     HRESULT hr;
     if (sys->hd3d.use_ex) {
-        hr = IDirect3DDevice9Ex_PresentEx(p_d3d9_dev->devex, &src, &dst, NULL, NULL, 0);
+        hr = IDirect3DDevice9Ex_PresentEx(p_d3d9_dev->devex, &src, &src, NULL, NULL, 0);
     } else {
-        hr = IDirect3DDevice9_Present(p_d3d9_dev->dev, &src, &dst, NULL, NULL);
+        hr = IDirect3DDevice9_Present(p_d3d9_dev->dev, &src, &src, NULL, NULL);
     }
     if (FAILED(hr)) {
         msg_Dbg(vd, "Failed Present: 0x%0lx", hr);
@@ -1337,8 +1320,6 @@ static void Display(vout_display_t *vd, picture_t *picture)
         return;
 
     sys->swapCb(sys->outside_opaque);
-
-    CommonDisplay(vd);
 }
 
 /**
@@ -1470,12 +1451,6 @@ static int Direct3D9Open(vout_display_t *vd, video_format_t *fmt,
 
     const d3d9_device_t *p_d3d9_dev = &sys->d3d_dev;
     /* */
-    RECT *display = &vd->sys->sys.rect_display;
-    display->left   = 0;
-    display->top    = 0;
-    display->right  = p_d3d9_dev->pp.BackBufferWidth;
-    display->bottom = p_d3d9_dev->pp.BackBufferHeight;
-
     *fmt = vd->source;
 
     /* Find the appropriate D3DFORMAT for the render chroma, the format will be the closest to
@@ -1492,7 +1467,7 @@ static int Direct3D9Open(vout_display_t *vd, video_format_t *fmt,
     fmt->i_bmask  = d3dfmt->bmask;
     sys->sw_texture_fmt = d3dfmt;
 
-    UpdateRects(vd, true);
+    UpdateRects(vd, &sys->area, &sys->sys);
 
     if (Direct3D9CreateResources(vd, fmt)) {
         msg_Err(vd, "Failed to allocate resources");
@@ -1500,8 +1475,7 @@ static int Direct3D9Open(vout_display_t *vd, video_format_t *fmt,
     }
 
     /* Change the window title bar text */
-    if (!sys->sys.b_windowless)
-        EventThreadUpdateTitle(sys->sys.event, VOUT_TITLE " (Direct3D9 output)");
+    vout_window_SetTitle(sys->area.vdcfg.window, VOUT_TITLE " (Direct3D9 output)");
 
     msg_Dbg(vd, "Direct3D9 device adapter successfully initialized");
     return VLC_SUCCESS;
@@ -1543,25 +1517,8 @@ static int Control(vout_display_t *vd, int query, va_list args)
         return VLC_SUCCESS;
     }
     default:
-        return CommonControl(vd, query, args);
+        return CommonControl(vd, &sys->area, &sys->sys, query, args);
     }
-}
-
-/*****************************************************************************
- * DesktopCallback: desktop mode variable callback
- *****************************************************************************/
-static int DesktopCallback(vlc_object_t *object, char const *psz_cmd,
-                            vlc_value_t oldval, vlc_value_t newval,
-                            void *p_data)
-{
-    vout_display_t *vd = (vout_display_t *)object;
-    vout_display_sys_t *sys = vd->sys;
-    VLC_UNUSED(psz_cmd);
-    VLC_UNUSED(oldval);
-    VLC_UNUSED(p_data);
-
-    atomic_store( &sys->new_desktop_mode, newval.b_bool );
-    return VLC_SUCCESS;
 }
 
 typedef struct
@@ -1660,15 +1617,16 @@ static int Open(vout_display_t *vd, const vout_display_cfg_t *cfg,
     if (!sys->hxdll)
         msg_Warn(vd, "cannot load Direct3D9 Shader Library; HLSL pixel shading will be disabled.");
 
-    sys->sys.use_desktop = var_CreateGetBool(vd, "video-wallpaper");
     sys->reset_device = false;
     sys->lost_not_ready = false;
     sys->allow_hw_yuv = var_CreateGetBool(vd, "directx-hw-yuv");
-    sys->desktop_save.is_fullscreen = cfg->is_fullscreen;
-    sys->desktop_save.is_on_top     = false;
 
-    if (CommonInit(vd, d3d9_device != NULL, cfg))
-        goto error;
+    InitArea(vd, &sys->area, cfg);
+    if (d3d9_device == NULL)
+    {
+        if (CommonInit(VLC_OBJECT(vd), &sys->area, &sys->sys, false))
+            goto error;
+    }
 
     /* */
     video_format_t fmt;
@@ -1693,12 +1651,6 @@ static int Open(vout_display_t *vd, const vout_display_cfg_t *cfg,
     else
         vd->info.subpicture_chromas = NULL;
 
-    /* Interaction */
-    atomic_init( &sys->new_desktop_mode, sys->sys.use_desktop );
-
-    var_Change(vd, "video-wallpaper", VLC_VAR_SETTEXT, _("Desktop"));
-    var_AddCallback(vd, "video-wallpaper", DesktopCallback, NULL);
-
     video_format_Clean(fmtp);
     video_format_Copy(fmtp, &fmt);
 
@@ -1708,14 +1660,10 @@ static int Open(vout_display_t *vd, const vout_display_cfg_t *cfg,
     vd->display = Display;
     vd->control = Control;
 
-    /* Fix state in case of desktop mode */
-    if (sys->sys.use_desktop && cfg->is_fullscreen)
-        vout_display_SendEventFullscreen(vd, false);
-
     return VLC_SUCCESS;
 error:
     Direct3D9Close(vd);
-    CommonClean(vd);
+    CommonClean(VLC_OBJECT(vd), &sys->sys);
     Direct3D9Destroy(sys);
     free(vd->sys);
     return VLC_EGENERIC;
@@ -1726,11 +1674,9 @@ error:
  */
 static void Close(vout_display_t *vd)
 {
-    var_DelCallback(vd, "video-wallpaper", DesktopCallback, NULL);
-
     Direct3D9Close(vd);
 
-    CommonClean(vd);
+    CommonClean(VLC_OBJECT(vd), &vd->sys->sys);
 
     Direct3D9Destroy(vd->sys);
 

@@ -44,8 +44,6 @@
 
 static int InputEvent( vlc_object_t *, const char *,
                        vlc_value_t, vlc_value_t, void * );
-static int VbiEvent( vlc_object_t *, const char *,
-                     vlc_value_t, vlc_value_t, void * );
 
 /* Ensure arbitratry (not dynamically allocated) event IDs are not in use */
 static inline void registerAndCheckEventIds( int start, int end )
@@ -69,7 +67,6 @@ InputManager::InputManager( MainInputManager *mim, intf_thread_t *_p_intf) :
     oldName      = "";
     artUrl       = "";
     p_input      = NULL;
-    p_input_vbi  = NULL;
     f_rate       = 0.;
     p_item       = NULL;
     b_video      = false;
@@ -144,7 +141,6 @@ void InputManager::setInput( input_thread_t *_p_input )
     {
         p_item = NULL;
         lastURI.clear();
-        assert( !p_input_vbi );
         emit rateChanged( var_InheritFloat( p_intf, "rate" ) );
     }
 }
@@ -180,12 +176,6 @@ void InputManager::delInput()
     timeA                = VLC_TICK_INVALID;
     timeB                = VLC_TICK_INVALID;
     f_rate               = 0. ;
-
-    if( p_input_vbi )
-    {
-        vlc_object_release( p_input_vbi );
-        p_input_vbi = NULL;
-    }
 
     input_Release( p_input );
     p_input = NULL;
@@ -349,6 +339,7 @@ static int InputEvent( vlc_object_t *, const char *,
         break;
 
     case INPUT_EVENT_ES:
+    case INPUT_EVENT_VBI_PAGE:
         event = new IMEvent( IMEvent::ItemEsChanged );
         break;
 
@@ -405,16 +396,6 @@ static int InputEvent( vlc_object_t *, const char *,
 
     if( event )
         QApplication::postEvent( im, event );
-    return VLC_SUCCESS;
-}
-
-static int VbiEvent( vlc_object_t *, const char *,
-                     vlc_value_t, vlc_value_t, void *param )
-{
-    InputManager *im = (InputManager*)param;
-    IMEvent *event = new IMEvent( IMEvent::ItemEsChanged );
-
-    QApplication::postEvent( im, event );
     return VLC_SUCCESS;
 }
 
@@ -585,25 +566,16 @@ void InputManager::UpdateTeletext()
     /* If Teletext is selected */
     if( b_enabled && i_teletext_es >= 0 )
     {
+        vlc_object_t *p_input_vbi;
         /* Then, find the current page */
         int i_page = 100;
         bool b_transparent = false;
 
-        if( p_input_vbi )
-        {
-            var_DelCallback( p_input_vbi, "vbi-page", VbiEvent, this );
-            vlc_object_release( p_input_vbi );
-        }
-
-        if( input_GetEsObjects( p_input, i_teletext_es, &p_input_vbi, NULL, NULL ) )
+        if( input_GetEsObjects( p_input, i_teletext_es, &p_input_vbi ) )
             p_input_vbi = NULL;
 
         if( p_input_vbi )
         {
-            /* This callback is not remove explicitly, but interfaces
-             * are guaranted to outlive input */
-            var_AddCallback( p_input_vbi, "vbi-page", VbiEvent, this );
-
             i_page = var_GetInteger( p_input_vbi, "vbi-page" );
             b_transparent = !var_GetBool( p_input_vbi, "vbi-opaque" );
         }
@@ -828,24 +800,39 @@ void InputManager::changeProgram( int program )
 /* Set a new Teletext Page */
 void InputManager::telexSetPage( int page )
 {
-    if( hasInput() && p_input_vbi )
-    {
-        const int i_teletext_es = var_GetInteger( p_input, "teletext-es" );
+    vlc_object_t *input_vbi;
 
-        if( i_teletext_es >= 0 )
-        {
-            var_SetInteger( p_input_vbi, "vbi-page", page );
-            emit newTelexPageSet( page );
-        }
+    if (!hasInput())
+        return;
+
+    const int i_teletext_es = var_GetInteger(p_input, "teletext-es");
+    if (i_teletext_es >= 0)
+    {
+        if (input_GetEsObjects(p_input, i_teletext_es, &input_vbi)
+         || input_vbi == NULL)
+            return;
+
+        var_SetInteger(input_vbi, "vbi-page", page);
+        emit newTelexPageSet(page);
     }
 }
 
 /* Set the transparency on teletext */
 void InputManager::telexSetTransparency( bool b_transparentTelextext )
 {
-    if( hasInput() && p_input_vbi )
+    vlc_object_t *input_vbi;
+
+    if (!hasInput())
+        return;
+
+    const int i_teletext_es = var_GetInteger(p_input, "teletext-es");
+    if (i_teletext_es >= 0)
     {
-        var_SetBool( p_input_vbi, "vbi-opaque", !b_transparentTelextext );
+        if (input_GetEsObjects(p_input, i_teletext_es, &input_vbi)
+         || input_vbi == NULL)
+            return;
+
+        var_SetBool(input_vbi, "vbi-opaque", !b_transparentTelextext);
         emit teletextTransparencyActivated( b_transparentTelextext );
     }
 }

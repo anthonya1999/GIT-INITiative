@@ -224,8 +224,6 @@ static int ReadDir( stream_t *p_demux, input_item_node_t *p_subitems )
     bool b_cleanup = false;
     input_item_t *p_input;
 
-    input_item_t *p_current_input = GetCurrentItem(p_demux);
-
     psz_line = vlc_stream_ReadLine( p_demux->s );
     while( psz_line )
     {
@@ -311,8 +309,6 @@ static int ReadDir( stream_t *p_demux, input_item_node_t *p_subitems )
             if( !p_input )
                 goto error;
             input_item_AddOptions( p_input, i_options, ppsz_options, 0 );
-            if ( p_current_input )
-                input_item_CopyOptions( p_input, p_current_input );
 
             if( !EMPTY_STR(psz_artist) )
                 input_item_SetArtist( p_input, psz_artist );

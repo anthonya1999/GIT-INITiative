@@ -213,6 +213,7 @@ modules/access/shm.c
 modules/access/smb_common.h
 modules/access/smb2.c
 modules/access/srt.c
+modules/access/srt_common.c
 modules/access/tcp.c
 modules/access/timecode.c
 modules/access/udp.c
@@ -360,7 +361,6 @@ modules/codec/videotoolbox.m
 modules/codec/vorbis.c
 modules/codec/vpx.c
 modules/codec/webvtt/webvtt.c
-modules/codec/wmafixed/wma.c
 modules/codec/x264.c
 modules/codec/x265.c
 modules/codec/xwd.c
@@ -1228,9 +1228,9 @@ modules/video_output/opengl/vout_helper.h
 modules/video_output/vulkan/display.c
 modules/video_output/win32/direct3d9.c
 modules/video_output/win32/direct3d11.c
-modules/video_output/win32/directdraw.c
 modules/video_output/win32/events.c
 modules/video_output/win32/glwin32.c
+modules/video_output/win32/window.c
 modules/video_output/win32/wingdi.c
 modules/video_output/win32/wgl.c
 modules/video_output/vdummy.c

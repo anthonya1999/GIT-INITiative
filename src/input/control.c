@@ -316,12 +316,10 @@ int input_vaControl( input_thread_t *p_input, int i_query, va_list args )
         {
             const int i_id = va_arg( args, int );
             vlc_object_t **pp_decoder = va_arg( args, vlc_object_t ** );
-            vout_thread_t **pp_vout = va_arg( args, vout_thread_t ** );
-            audio_output_t **pp_aout = va_arg( args, audio_output_t ** );
 
             return es_out_Control( priv->p_es_out_display,
                                    ES_OUT_GET_ES_OBJECTS_BY_ID, i_id,
-                                   pp_decoder, pp_vout, pp_aout );
+                                   pp_decoder );
         }
 
         case INPUT_GET_PCR_SYSTEM:

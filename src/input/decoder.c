@@ -540,6 +540,12 @@ static int vout_update_format( decoder_t *p_dec )
                 .dpb_size = dpb_size + p_dec->i_extra_picture_buffers + 1,
                 .mouse_event = MouseEvent, .mouse_opaque = p_dec
             } );
+        if (p_vout)
+            input_SendEventVout(p_owner->p_input,
+                &(struct vlc_input_event_vout) {
+                    .action = VLC_INPUT_EVENT_VOUT_ADDED,
+                    .vout = p_vout,
+                });
 
         vlc_mutex_lock( &p_owner->lock );
         p_owner->p_vout = p_vout;
@@ -988,7 +994,6 @@ static void DecoderPlayVideo( decoder_t *p_dec, picture_t *p_picture,
         p_owner->b_has_data = true;
         vlc_cond_signal( &p_owner->wait_acknowledge );
     }
-    bool b_first_after_wait = p_owner->b_waiting && p_owner->b_has_data;
 
     DecoderWaitUnblock( p_dec );
 
@@ -1138,7 +1143,7 @@ static void DecoderPlayAudio( decoder_t *p_dec, block_t *p_audio,
         msg_Dbg( p_dec, "end of audio preroll" );
 
         if( p_owner->p_aout )
-            aout_DecFlush( p_owner->p_aout, false );
+            aout_DecFlush( p_owner->p_aout );
     }
 
     /* */
@@ -1465,7 +1470,7 @@ static void DecoderProcessFlush( decoder_t *p_dec )
     if( p_dec->fmt_out.i_cat == AUDIO_ES )
     {
         if( p_owner->p_aout )
-            aout_DecFlush( p_owner->p_aout, false );
+            aout_DecFlush( p_owner->p_aout );
     }
     else if( p_dec->fmt_out.i_cat == VIDEO_ES )
     {
@@ -1688,7 +1693,7 @@ static void *DecoderThread( void *p_data )
         {   /* Draining: the decoder is drained and all decoded buffers are
              * queued to the output at this point. Now drain the output. */
             if( p_owner->p_aout != NULL )
-                aout_DecFlush( p_owner->p_aout, true );
+                aout_DecDrain( p_owner->p_aout );
         }
         vlc_restorecancel( canc );
 
@@ -1933,21 +1938,30 @@ static void DeleteDecoder( decoder_t * p_dec )
             if( p_owner->p_aout )
             {
                 /* TODO: REVISIT gap-less audio */
-                aout_DecFlush( p_owner->p_aout, false );
                 aout_DecDelete( p_owner->p_aout );
                 input_resource_PutAout( p_owner->p_resource, p_owner->p_aout );
             }
             break;
-        case VIDEO_ES:
-            if( p_owner->p_vout )
+        case VIDEO_ES: {
+            vout_thread_t *vout = p_owner->p_vout;
+
+            if (vout != NULL)
             {
                 /* Reset the cancel state that was set before joining the decoder
                  * thread */
-                vout_Cancel( p_owner->p_vout, false );
-
-                input_resource_PutVout( p_owner->p_resource, p_owner->p_vout );
+                vout_Cancel(vout, false);
+                vout_FlushAll(vout);
+                vout_FlushSubpictureChannel(vout, -1);
+                vout_Stop(vout);
+                input_SendEventVout(p_owner->p_input,
+                    &(struct vlc_input_event_vout) {
+                        .action = VLC_INPUT_EVENT_VOUT_DELETED,
+                        .vout = vout,
+                    });
+                input_resource_PutVout(p_owner->p_resource, vout);
             }
             break;
+        }
         case SPU_ES:
         {
             if( p_owner->p_vout )
@@ -2493,21 +2507,6 @@ size_t input_DecoderGetFifoSize( decoder_t *p_dec )
     struct decoder_owner *p_owner = dec_get_owner( p_dec );
 
     return block_FifoSize( p_owner->p_fifo );
-}
-
-void input_DecoderGetObjects( decoder_t *p_dec,
-                              vout_thread_t **pp_vout, audio_output_t **pp_aout )
-{
-    struct decoder_owner *p_owner = dec_get_owner( p_dec );
-
-    vlc_mutex_lock( &p_owner->lock );
-    if( pp_vout )
-        *pp_vout = p_dec->fmt_in.i_cat == VIDEO_ES && p_owner->p_vout ?
-            vout_Hold(p_owner->p_vout) : NULL;
-    if( pp_aout )
-        *pp_aout = p_dec->fmt_in.i_cat == AUDIO_ES && p_owner->p_aout ?
-            aout_Hold(p_owner->p_aout) : NULL;
-    vlc_mutex_unlock( &p_owner->lock );
 }
 
 void input_DecoderSetVoutMouseEvent( decoder_t *dec, vlc_mouse_event mouse_event,

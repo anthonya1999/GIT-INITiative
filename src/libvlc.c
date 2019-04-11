@@ -68,7 +68,6 @@
 
 #include "libvlc.h"
 #include "playlist_legacy/playlist_internal.h"
-#include "misc/variables.h"
 
 #include <vlc_vlm.h>
 
@@ -450,7 +449,16 @@ void libvlc_InternalDestroy( libvlc_int_t *p_libvlc )
 
     vlc_ExitDestroy( &priv->exit );
 
-    assert( atomic_load(&(vlc_internals(p_libvlc)->refs)) == 1 );
+#if 0
+    {
+        vlc_object_internals_t *internal = vlc_internals(p_libvlc);
+        if (atomic_load(&internal->refs) != 1)
+        {
+            fprintf(stderr, "=== vlc_object LEAKS detected ===\n");
+            DumpStructureLocked(VLC_OBJECT(p_libvlc), stderr, 0);
+        }
+    }
+#endif
     vlc_object_delete(p_libvlc);
 }
 

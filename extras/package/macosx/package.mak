@@ -29,32 +29,30 @@ endif
 if HAVE_BREAKPAD
 	cp -R $(CONTRIB_DIR)/Frameworks/Breakpad.framework $@/Contents/Frameworks
 endif
-	mkdir -p $@/Contents/MacOS/share/
+	mkdir -p $@/Contents/Resources/share/
+	mkdir -p $@/Contents/MacOS/
 if BUILD_LUA
 	## Copy lua scripts
-	cp -r "$(pkgdatadir)/lua" $@/Contents/MacOS/share/
-	cp -r "$(pkglibexecdir)/lua" $@/Contents/MacOS/
+	cp -r "$(pkgdatadir)/lua" $@/Contents/Resources/share/
+	cp -r "$(pkglibexecdir)/lua" $@/Contents/Frameworks/
 endif
 	## HRTFs
-	cp -r $(srcdir)/share/hrtfs $@/Contents/MacOS/share/
-	## Copy some other stuff (?)
-	mkdir -p $@/Contents/MacOS/include/
-	(cd "$(prefix)/include" && $(AMTAR) -c --exclude "plugins" vlc) | $(AMTAR) -x -C $@/Contents/MacOS/include/
+	cp -r $(srcdir)/share/hrtfs $@/Contents/Resources/share/
 	## Copy translations
-	test -d "$(prefix)/share/locale" && cp -r "$(prefix)/share/locale" $@/Contents/MacOS/share/ || true
+	-cp -a "$(prefix)/share/locale" $@/Contents/Resources/share/
 	printf "APPLVLC#" >| $@/Contents/PkgInfo
 	## Copy libs
-	mkdir -p $@/Contents/MacOS/lib
-	find $(prefix)/lib -name 'libvlc*.dylib' -maxdepth 1 -exec cp -a {} $@/Contents/MacOS/lib \;
+	find $(prefix)/lib -name 'libvlc*.dylib' -maxdepth 1 -exec cp -a {} $@/Contents/Frameworks \;
 	## Copy plugins
-	mkdir -p $@/Contents/MacOS/plugins
-	find $(prefix)/lib/vlc/plugins -name 'lib*_plugin.dylib' -maxdepth 2 -exec cp -a {} $@/Contents/MacOS/plugins \;
+	mkdir -p $@/Contents/Frameworks/plugins
+	find $(prefix)/lib/vlc/plugins -name 'lib*_plugin.dylib' -maxdepth 2 -exec cp -a {} $@/Contents/Frameworks/plugins \;
 	## Copy libbluray jar
-	-cp -a $(CONTRIB_DIR)/share/java/libbluray*.jar $@/Contents/MacOS/plugins/
+	-cp -a $(CONTRIB_DIR)/share/java/libbluray*.jar $@/Contents/Frameworks/plugins/
 	## Install binary
 	cp $(prefix)/bin/vlc $@/Contents/MacOS/VLC
+	install_name_tool -rpath "$(libdir)" "@executable_path/../Frameworks/" $@/Contents/MacOS/VLC
 	## Generate plugin cache
-	bin/vlc-cache-gen $@/Contents/MacOS/plugins
+	VLC_LIB_PATH="$@/Contents/Frameworks" bin/vlc-cache-gen $@/Contents/Frameworks/plugins
 	find $@ -type d -exec chmod ugo+rx '{}' \;
 	find $@ -type f -exec chmod ugo+r '{}' \;
 

@@ -62,6 +62,7 @@ vlc_module_end ()
 struct vout_display_sys_t
 {
     vout_display_sys_win32_t sys;
+    display_win32_area_t     area;
 
     int  i_depth;
 
@@ -97,6 +98,12 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
     picture_CopyPixels(&fake_pic, picture);
 }
 
+static int Control(vout_display_t *vd, int query, va_list args)
+{
+    vout_display_sys_t *sys = vd->sys;
+    return CommonControl(vd, &sys->area, &sys->sys, query, args);
+}
+
 /* */
 static int Open(vout_display_t *vd, const vout_display_cfg_t *cfg,
                 video_format_t *fmtp, vlc_video_context *context)
@@ -110,7 +117,8 @@ static int Open(vout_display_t *vd, const vout_display_cfg_t *cfg,
     if (!sys)
         return VLC_ENOMEM;
 
-    if (CommonInit(vd, false, cfg))
+    InitArea(vd, &sys->area, cfg);
+    if (CommonInit(VLC_OBJECT(vd), &sys->area, &sys->sys, false))
         goto error;
 
     /* */
@@ -122,7 +130,7 @@ static int Open(vout_display_t *vd, const vout_display_cfg_t *cfg,
 
     vd->prepare = Prepare;
     vd->display = Display;
-    vd->control = CommonControl;
+    vd->control = Control;
     return VLC_SUCCESS;
 
 error:
@@ -135,7 +143,7 @@ static void Close(vout_display_t *vd)
 {
     Clean(vd);
 
-    CommonClean(vd);
+    CommonClean(VLC_OBJECT(vd), &vd->sys->sys);
 
     free(vd->sys);
 }
@@ -145,54 +153,33 @@ static void Display(vout_display_t *vd, picture_t *picture)
     vout_display_sys_t *sys = vd->sys;
     VLC_UNUSED(picture);
 
-#define rect_src vd->sys->rect_src
-#define rect_src_clipped vd->sys->sys.rect_src_clipped
-#define rect_dest vd->sys->sys.rect_dest
-#define rect_dest_clipped vd->sys->sys.rect_dest_clipped
-    RECT rect_dst = rect_dest_clipped;
     HDC hdc = GetDC(sys->sys.hvideownd);
 
-    OffsetRect(&rect_dst, -rect_dest.left, -rect_dest.top);
     SelectObject(sys->off_dc, sys->off_bitmap);
 
-    if (rect_dest_clipped.right - rect_dest_clipped.left !=
-        rect_src_clipped.right - rect_src_clipped.left ||
-        rect_dest_clipped.bottom - rect_dest_clipped.top !=
-        rect_src_clipped.bottom - rect_src_clipped.top) {
-        StretchBlt(hdc, rect_dst.left, rect_dst.top,
-                   rect_dst.right, rect_dst.bottom,
+    if (sys->area.place.width  != vd->source.i_visible_width ||
+        sys->area.place.height != vd->source.i_visible_height) {
+        StretchBlt(hdc, 0, 0,
+                   sys->area.place.width, sys->area.place.height,
                    sys->off_dc,
-                   rect_src_clipped.left,  rect_src_clipped.top,
-                   rect_src_clipped.right, rect_src_clipped.bottom,
+                   vd->source.i_x_offset, vd->source.i_y_offset,
+                   vd->source.i_x_offset + vd->source.i_visible_width,
+                   vd->source.i_y_offset + vd->source.i_visible_height,
                    SRCCOPY);
     } else {
-        BitBlt(hdc, rect_dst.left, rect_dst.top,
-               rect_dst.right, rect_dst.bottom,
+        BitBlt(hdc, 0, 0,
+               sys->area.place.width, sys->area.place.height,
                sys->off_dc,
-               rect_src_clipped.left, rect_src_clipped.top,
+               vd->source.i_x_offset, vd->source.i_y_offset,
                SRCCOPY);
     }
 
     ReleaseDC(sys->sys.hvideownd, hdc);
-#undef rect_src
-#undef rect_src_clipped
-#undef rect_dest
-#undef rect_dest_clipped
-
-    CommonDisplay(vd);
-    CommonManage(vd);
 }
 
 static int Init(vout_display_t *vd, video_format_t *fmt)
 {
     vout_display_sys_t *sys = vd->sys;
-
-    /* */
-    RECT *display = &sys->sys.rect_display;
-    display->left   = 0;
-    display->top    = 0;
-    display->right  = GetSystemMetrics(SM_CXSCREEN);;
-    display->bottom = GetSystemMetrics(SM_CYSCREEN);;
 
     /* Initialize an offscreen bitmap for direct buffer operations. */
 
@@ -272,10 +259,9 @@ static int Init(vout_display_t *vd, video_format_t *fmt)
     SelectObject(sys->off_dc, sys->off_bitmap);
     ReleaseDC(sys->sys.hvideownd, window_dc);
 
-    if (!sys->sys.b_windowless)
-        EventThreadUpdateTitle(sys->sys.event, VOUT_TITLE " (WinGDI output)");
+    vout_window_SetTitle(sys->area.vdcfg.window, VOUT_TITLE " (WinGDI output)");
 
-    UpdateRects(vd, true);
+    UpdateRects(vd, &sys->area, &sys->sys);
 
     return VLC_SUCCESS;
 }

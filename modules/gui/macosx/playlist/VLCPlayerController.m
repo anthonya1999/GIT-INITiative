@@ -22,6 +22,8 @@
 
 #import "VLCPlayerController.h"
 
+#import <vlc_url.h>
+
 #import "main/VLCMain.h"
 #import "os-integration/VLCRemoteControlService.h"
 #import "os-integration/iTunes.h"
@@ -30,7 +32,6 @@
 
 #import <MediaPlayer/MediaPlayer.h>
 
-NSString *VLCPlayerCurrentMediaItem = @"VLCPlayerCurrentMediaItem";
 NSString *VLCPlayerCurrentMediaItemChanged = @"VLCPlayerCurrentMediaItemChanged";
 NSString *VLCPlayerStateChanged = @"VLCPlayerStateChanged";
 NSString *VLCPlayerErrorChanged = @"VLCPlayerErrorChanged";
@@ -42,17 +43,21 @@ NSString *VLCPlayerTimeAndPositionChanged = @"VLCPlayerTimeAndPositionChanged";
 NSString *VLCPlayerLengthChanged = @"VLCPlayerLengthChanged";
 NSString *VLCPlayerTitleSelectionChanged = @"VLCPlayerTitleSelectionChanged";
 NSString *VLCPlayerTitleListChanged = @"VLCPlayerTitleListChanged";
+NSString *VLCPlayerABLoopStateChanged = @"VLCPlayerABLoopStateChanged";
 NSString *VLCPlayerTeletextMenuAvailable = @"VLCPlayerTeletextMenuAvailable";
 NSString *VLCPlayerTeletextEnabled = @"VLCPlayerTeletextEnabled";
 NSString *VLCPlayerTeletextPageChanged = @"VLCPlayerTeletextPageChanged";
 NSString *VLCPlayerTeletextTransparencyChanged = @"VLCPlayerTeletextTransparencyChanged";
 NSString *VLCPlayerAudioDelayChanged = @"VLCPlayerAudioDelayChanged";
 NSString *VLCPlayerSubtitlesDelayChanged = @"VLCPlayerSubtitlesDelayChanged";
+NSString *VLCPlayerSubtitlesFPSChanged = @"VLCPlayerSubtitlesFPSChanged";
 NSString *VLCPlayerSubtitleTextScalingFactorChanged = @"VLCPlayerSubtitleTextScalingFactorChanged";
 NSString *VLCPlayerRecordingChanged = @"VLCPlayerRecordingChanged";
 NSString *VLCPlayerRendererChanged = @"VLCPlayerRendererChanged";
 NSString *VLCPlayerInputStats = @"VLCPlayerInputStats";
 NSString *VLCPlayerStatisticsUpdated = @"VLCPlayerStatisticsUpdated";
+NSString *VLCPlayerTrackListChanged = @"VLCPlayerTrackListChanged";
+NSString *VLCPlayerTrackSelectionChanged = @"VLCPlayerTrackSelectionChanged";
 NSString *VLCPlayerFullscreenChanged = @"VLCPlayerFullscreenChanged";
 NSString *VLCPlayerWallpaperModeChanged = @"VLCPlayerWallpaperModeChanged";
 NSString *VLCPlayerListOfVideoOutputThreadsChanged = @"VLCPlayerListOfVideoOutputThreadsChanged";
@@ -95,8 +100,12 @@ NSString *VLCPlayerMuteChanged = @"VLCPlayerMuteChanged";
 - (void)audioDelayChanged:(vlc_tick_t)audioDelay;
 - (void)rendererChanged:(vlc_renderer_item_t *)newRendererItem;
 - (void)subtitlesDelayChanged:(vlc_tick_t)subtitlesDelay;
+- (void)subtitlesFPSChanged:(float)subtitlesFPS;
 - (void)recordingChanged:(BOOL)recording;
 - (void)inputStatsUpdated:(VLCInputStats *)inputStats;
+- (void)trackSelectionChanged;
+- (void)trackListChanged;
+- (void)ABLoopStateChanged:(enum vlc_player_abloop)abLoopState;
 - (void)stopActionChanged:(enum vlc_player_media_stopped_action)stoppedAction;
 - (void)metaDataChangedForInput:(input_item_t *)inputItem;
 - (void)voutListUpdated;
@@ -263,6 +272,15 @@ static void cb_player_subtitle_delay_changed(vlc_player_t *p_player, vlc_tick_t 
     });
 }
 
+static void cb_player_associated_subs_fps_changed(vlc_player_t *p_player, float subs_fps, void *p_data)
+{
+    VLC_UNUSED(p_player);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        VLCPlayerController *playerController = (__bridge VLCPlayerController *)p_data;
+        [playerController subtitlesFPSChanged:subs_fps];
+    });
+}
+
 static void cb_player_renderer_changed(vlc_player_t *p_player,
                                        vlc_renderer_item_t *p_new_renderer,
                                        void *p_data)
@@ -317,6 +335,42 @@ static void cb_player_stats_changed(vlc_player_t *p_player,
     });
 }
 
+static void cb_player_track_list_changed(vlc_player_t *p_player,
+                                         enum vlc_player_list_action action,
+                                         const struct vlc_player_track *track,
+                                         void *p_data)
+{
+    VLC_UNUSED(p_player); VLC_UNUSED(action); VLC_UNUSED(track);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        VLCPlayerController *playerController = (__bridge VLCPlayerController *)p_data;
+        [playerController trackListChanged];
+    });
+}
+
+static void cb_player_track_selection_changed(vlc_player_t *p_player,
+                                              vlc_es_id_t *unselected_id,
+                                              vlc_es_id_t *selected_id,
+                                              void *p_data)
+{
+    VLC_UNUSED(p_player); VLC_UNUSED(unselected_id); VLC_UNUSED(selected_id);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        VLCPlayerController *playerController = (__bridge VLCPlayerController *)p_data;
+        [playerController trackSelectionChanged];
+    });
+}
+
+static void cb_player_atobloop_changed(vlc_player_t *p_player,
+                                       enum vlc_player_abloop new_state,
+                                       vlc_tick_t time, float pos,
+                                       void *p_data)
+{
+    VLC_UNUSED(p_player);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        VLCPlayerController *playerController = (__bridge VLCPlayerController *)p_data;
+        [playerController ABLoopStateChanged:new_state];
+    });
+}
+
 static void cb_player_media_stopped_action_changed(vlc_player_t *p_player,
                                                    enum vlc_player_media_stopped_action newAction,
                                                    void *p_data)
@@ -362,8 +416,8 @@ static const struct vlc_player_cbs player_callbacks = {
     cb_player_capabilities_changed,
     cb_player_position_changed,
     cb_player_length_changed,
-    NULL, //cb_player_track_list_changed,
-    NULL, //cb_player_track_selection_changed,
+    cb_player_track_list_changed,
+    cb_player_track_selection_changed,
     NULL, //cb_player_program_list_changed,
     NULL, //cb_player_program_selection_changed,
     cb_player_titles_changed,
@@ -375,12 +429,12 @@ static const struct vlc_player_cbs player_callbacks = {
     cb_player_teletext_transparency_changed,
     cb_player_audio_delay_changed,
     cb_player_subtitle_delay_changed,
-    NULL, //cb_player_associated_subs_fps_changed,
+    cb_player_associated_subs_fps_changed,
     cb_player_renderer_changed,
     cb_player_record_changed,
     NULL, //cb_player_signal_changed,
     cb_player_stats_changed,
-    NULL, //cb_player_atobloop_changed,
+    cb_player_atobloop_changed,
     cb_player_media_stopped_action_changed,
     cb_player_item_meta_changed,
     NULL, //cb_player_item_epg_changed,
@@ -625,8 +679,75 @@ static const struct vlc_player_aout_cbs player_aout_callbacks = {
 - (void)currentMediaItemChanged:(input_item_t *)newMediaItem
 {
     [_defaultNotificationCenter postNotificationName:VLCPlayerCurrentMediaItemChanged
-                                              object:self
-                                            userInfo:@{VLCPlayerCurrentMediaItem:[NSValue valueWithPointer:newMediaItem]}];
+                                              object:self];
+}
+
+- (vlc_tick_t)durationOfCurrentMediaItem
+{
+    input_item_t *p_item = self.currentMedia;
+
+    if (!p_item) {
+        return -1;
+    }
+
+    vlc_tick_t duration = input_item_GetDuration(p_item);
+    input_item_Release(p_item);
+
+    return duration;
+}
+
+- (NSURL *)URLOfCurrentMediaItem;
+{
+    input_item_t *p_item = self.currentMedia;
+    if (!p_item) {
+        return nil;
+    }
+
+    char *psz_url = vlc_uri_decode(input_item_GetURI(p_item));
+    if (!psz_url) {
+        return nil;
+    }
+    NSURL *url = [NSURL URLWithString:toNSStr(psz_url)];
+    free(psz_url);
+    input_item_Release(p_item);
+
+    return url;
+}
+
+- (NSString*)nameOfCurrentMediaItem;
+{
+    input_item_t *p_item = self.currentMedia;
+    if (!p_item) {
+        return nil;
+    }
+
+    NSString *name;
+    static char *tmp_cstr = NULL;
+
+    // Get Title
+    tmp_cstr = input_item_GetTitleFbName(p_item);
+    if (tmp_cstr) {
+        name = toNSStr(tmp_cstr);
+        FREENULL(tmp_cstr);
+    }
+
+    if (!name) {
+        char *psz_uri = input_item_GetURI(p_item);
+        if (!psz_uri) {
+            input_item_Release(p_item);
+            return nil;
+        }
+        NSURL *url = [NSURL URLWithString:toNSStr(psz_uri)];
+        free(psz_uri);
+
+        if ([url isFileURL])
+            name = [[NSFileManager defaultManager] displayNameAtPath:[url path]];
+        else
+            name = [url absoluteString];
+    }
+
+    input_item_Release(p_item);
+    return name;
 }
 
 - (void)stateChanged:(enum vlc_player_state)state
@@ -857,6 +978,13 @@ static const struct vlc_player_aout_cbs player_aout_callbacks = {
     vlc_player_Unlock(_p_player);
 }
 
+- (void)displayPosition
+{
+    vlc_player_Lock(_p_player);
+    vlc_player_DisplayPosition(_p_player);
+    vlc_player_Unlock(_p_player);
+}
+
 - (void)jumpWithValue:(char *)p_userDefinedJumpSize forward:(BOOL)shallJumpForward
 {
     int64_t interval = var_InheritInteger(getIntf(), p_userDefinedJumpSize);
@@ -1044,6 +1172,20 @@ static const struct vlc_player_aout_cbs player_aout_callbacks = {
     vlc_player_Unlock(_p_player);
 }
 
+- (void)subtitlesFPSChanged:(float)subtitlesFPS
+{
+    _subtitlesFPS = subtitlesFPS;
+    [_defaultNotificationCenter postNotificationName:VLCPlayerSubtitlesFPSChanged
+                                              object:self];
+}
+
+- (void)setSubtitlesFPS:(float)subtitlesFPS
+{
+    vlc_player_Lock(_p_player);
+    vlc_player_SetAssociatedSubsFPS(_p_player, subtitlesFPS);
+    vlc_player_Unlock(_p_player);
+}
+
 - (unsigned int)subtitleTextScalingFactor
 {
     unsigned int ret = 100;
@@ -1065,6 +1207,19 @@ static const struct vlc_player_aout_cbs player_aout_callbacks = {
     vlc_player_Unlock(_p_player);
 }
 
+- (int)addAssociatedMediaToCurrentFromURL:(NSURL *)URL
+                               ofCategory:(enum es_format_category_e)category
+                         shallSelectTrack:(BOOL)selectTrack
+                          shallDisplayOSD:(BOOL)showOSD
+                     shallVerifyExtension:(BOOL)verifyExtension
+{
+    int ret;
+    vlc_player_Lock(_p_player);
+    ret = vlc_player_AddAssociatedMedia(_p_player, category, [[URL absoluteString] UTF8String], selectTrack, showOSD, verifyExtension);
+    vlc_player_Unlock(_p_player);
+    return ret;
+}
+
 - (void)rendererChanged:(vlc_renderer_item_t *)newRenderer
 {
     _rendererItem = newRenderer;
@@ -1076,6 +1231,13 @@ static const struct vlc_player_aout_cbs player_aout_callbacks = {
 {
     vlc_player_Lock(_p_player);
     vlc_player_SetRenderer(_p_player, rendererItem);
+    vlc_player_Unlock(_p_player);
+}
+
+- (void)navigateInInteractiveContent:(enum vlc_player_nav)navigationAction
+{
+    vlc_player_Lock(_p_player);
+    vlc_player_Navigate(_p_player, navigationAction);
     vlc_player_Unlock(_p_player);
 }
 
@@ -1092,6 +1254,125 @@ static const struct vlc_player_aout_cbs player_aout_callbacks = {
     [_defaultNotificationCenter postNotificationName:VLCPlayerStatisticsUpdated
                                               object:self
                                             userInfo:@{VLCPlayerInputStats : inputStats}];
+}
+
+#pragma mark - track selection
+- (void)trackSelectionChanged
+{
+    [_defaultNotificationCenter postNotificationName:VLCPlayerTrackSelectionChanged object:self];
+}
+
+- (void)trackListChanged
+{
+    [_defaultNotificationCenter postNotificationName:VLCPlayerTrackListChanged object:nil];
+}
+
+- (void)selectTrack:(VLCTrackMetaData *)track
+{
+    vlc_player_Lock(_p_player);
+    vlc_player_SelectTrack(_p_player, track.esID);
+    vlc_player_Unlock(_p_player);
+}
+
+- (void)unselectTrack:(VLCTrackMetaData *)track
+{
+    vlc_player_Lock(_p_player);
+    vlc_player_UnselectTrack(_p_player, track.esID);
+    vlc_player_Unlock(_p_player);
+}
+
+- (void)unselectTracksFromCategory:(enum es_format_category_e)category
+{
+    vlc_player_Lock(_p_player);
+    vlc_player_UnselectTrackCategory(_p_player, category);
+    vlc_player_Unlock(_p_player);
+}
+
+- (void)selectPreviousTrackForCategory:(enum es_format_category_e)category
+{
+    vlc_player_Lock(_p_player);
+    vlc_player_SelectPrevTrack(_p_player, category);
+    vlc_player_Unlock(_p_player);
+}
+
+- (void)selectNextTrackForCategory:(enum es_format_category_e)category
+{
+    vlc_player_Lock(_p_player);
+    vlc_player_SelectNextTrack(_p_player, category);
+    vlc_player_Unlock(_p_player);
+}
+
+- (NSArray<VLCTrackMetaData *> *)tracksForCategory:(enum es_format_category_e)category
+{
+    size_t numberOfTracks = 0;
+    NSMutableArray *tracks;
+
+    vlc_player_Lock(_p_player);
+    numberOfTracks = vlc_player_GetTrackCount(_p_player, category);
+    if (numberOfTracks == 0) {
+        vlc_player_Unlock(_p_player);
+        return nil;
+    }
+
+    tracks = [[NSMutableArray alloc] initWithCapacity:numberOfTracks];
+    for (size_t x = 0; x < numberOfTracks; x++) {
+        VLCTrackMetaData *trackMetadata = [[VLCTrackMetaData alloc] init];
+        const struct vlc_player_track *track = vlc_player_GetTrackAt(_p_player, category, x);
+        trackMetadata.esID = track->es_id;
+        trackMetadata.name = toNSStr(track->name);
+        trackMetadata.selected = track->selected;
+        [tracks addObject:trackMetadata];
+    }
+    vlc_player_Unlock(_p_player);
+
+    return [tracks copy];
+}
+
+- (NSArray<VLCTrackMetaData *> *)audioTracks
+{
+    return [self tracksForCategory:AUDIO_ES];
+}
+
+- (NSArray<VLCTrackMetaData *> *)videoTracks
+{
+    return [self tracksForCategory:VIDEO_ES];
+}
+
+- (NSArray<VLCTrackMetaData *> *)subtitleTracks
+{
+    return [self tracksForCategory:SPU_ES];
+}
+
+- (void)ABLoopStateChanged:(enum vlc_player_abloop)abLoopState
+{
+    _abLoopState = abLoopState;
+    [_defaultNotificationCenter postNotificationName:VLCPlayerABLoopStateChanged
+                                              object:self];
+}
+
+- (int)setABLoop
+{
+    int ret = 0;
+    switch (_abLoopState) {
+        case VLC_PLAYER_ABLOOP_A:
+            ret = vlc_player_SetAtoBLoop(_p_player, VLC_PLAYER_ABLOOP_B);
+            break;
+
+        case VLC_PLAYER_ABLOOP_B:
+            ret = vlc_player_SetAtoBLoop(_p_player, VLC_PLAYER_ABLOOP_NONE);
+            break;
+
+        default:
+            ret = vlc_player_SetAtoBLoop(_p_player, VLC_PLAYER_ABLOOP_A);
+            break;
+    }
+
+    return ret;
+}
+
+- (int)disableABLoop
+{
+    return vlc_player_SetAtoBLoop(_p_player, VLC_PLAYER_ABLOOP_NONE);
 }
 
 - (void)setEnableRecording:(BOOL)enableRecording
@@ -1193,6 +1474,27 @@ static const struct vlc_player_aout_cbs player_aout_callbacks = {
     return vouts;
 }
 
+- (void)displayOSDMessage:(NSString *)message
+{
+    vlc_player_vout_OSDMessage(_p_player, [message UTF8String]);
+}
+
+- (NSString *)videoFilterChainForType:(enum vlc_vout_filter_type)filterType
+{
+    NSString *ret = nil;
+    char *psz_filterChain = vlc_player_vout_GetFilter(_p_player, filterType);
+    if (psz_filterChain != NULL) {
+        ret = [NSString stringWithUTF8String:psz_filterChain];
+        free(psz_filterChain);
+    }
+    return ret;
+}
+
+- (void)setVideoFilterChain:(NSString *)filterChain forType:(enum vlc_vout_filter_type)filterType
+{
+    vlc_player_vout_SetFilter(_p_player, filterType, filterChain != nil ? [filterChain UTF8String] : NULL);
+}
+
 #pragma mark - audio specific delegation
 
 - (void)volumeChanged:(float)volume
@@ -1239,8 +1541,26 @@ static const struct vlc_player_aout_cbs player_aout_callbacks = {
     return vlc_player_aout_Hold(_p_player);
 }
 
+- (int)enableAudioFilterWithName:(NSString *)name state:(BOOL)state
+{
+    if (name == nil || name.length == 0) {
+        return VLC_EBADVAR;
+    }
+
+    return vlc_player_aout_EnableFilter(_p_player, [name UTF8String], state);
+}
+
 @end
 
 @implementation VLCInputStats
+
+@end
+
+@implementation VLCTrackMetaData
+
+- (NSString *)description
+{
+    return [NSString stringWithFormat:@"%@: name: %@", [VLCTrackMetaData className], self.name];
+}
 
 @end

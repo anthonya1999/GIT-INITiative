@@ -269,11 +269,6 @@ void vout_display_TranslateMouseState(vout_display_t *vd, vlc_mouse_t *video,
     video->b_double_click = window->b_double_click;
 }
 
-void vout_display_SendMouseMovedDisplayCoordinates(vout_display_t *vd, int m_x, int m_y)
-{
-    vout_window_ReportMouseMoved(vd->cfg->window, m_x, m_y);
-}
-
 typedef struct {
     vout_display_t  display;
 
@@ -346,7 +341,7 @@ static int VoutDisplayCreateRender(vout_display_t *vd)
     es_format_InitFromVideo(&src, &v_src);
 
     /* */
-    int ret;
+    int ret = -1;
 
     for (int i = 0; i < 1 + (v_dst_cmp.i_chroma != v_dst.i_chroma); i++) {
         es_format_t dst;
@@ -783,7 +778,7 @@ vout_display_t *vout_display_New(vlc_object_t *parent,
     if (vd->module == NULL)
         goto error;
 
-#if defined(_WIN32) || defined(__OS2__)
+#if defined(__OS2__)
     if ((var_GetBool(parent, "fullscreen")
       || var_GetBool(parent, "video-wallpaper"))
      && vout_display_Control(vd, VOUT_DISPLAY_CHANGE_FULLSCREEN,

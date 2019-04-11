@@ -73,7 +73,8 @@ static inline void test_decode (const char *in, const char *out)
 
 static inline void test_b64 (const char *in, const char *out)
 {
-    test (vlc_b64_encode, in, out);
+    test(vlc_b64_encode, in, out);
+    test(vlc_b64_decode, out, in);
 }
 
 static char *make_URI_def (const char *in)
@@ -97,13 +98,20 @@ static inline void test_current_directory_path (const char *in, const char *cwd,
     free(expected_result);
 }
 
-static void test_url_parse(const char *in, const char *protocol,
-                           const char *user, const char *pass,
-                           const char *host, unsigned port,
-                           const char *path, const char *option)
+#define test_url_parse(in, protocol, user, pass, host, port, path, option) \
+    test_url_parse_internal(in, false, protocol, user, pass, host, port, path, option)
+
+#define test_url_parse_fixup(in, protocol, user, pass, host, port, path, option) \
+    test_url_parse_internal(in, true, protocol, user, pass, host, port, path, option)
+
+static void test_url_parse_internal(const char *in, bool fixup,
+                                    const char *protocol,
+                                    const char *user, const char *pass,
+                                    const char *host, unsigned port,
+                                    const char *path, const char *option)
 {
     vlc_url_t url;
-    int ret = vlc_UrlParse(&url, in);
+    int ret = fixup ? vlc_UrlParseFixup(&url, in) : vlc_UrlParse(&url, in);
 
     /* XXX: only checking that the port-part is parsed correctly, and
      *      equal to 0, is currently not supported due to the below. */
@@ -308,6 +316,10 @@ int main (void)
     test_url_parse("http://example.com:-18446744073709551615", NULL, NULL, NULL, NULL, 0, NULL, NULL );
     test_url_parse("http://user%/Oath", "http", NULL, NULL, NULL, 0, "/Oath",
                    NULL);
+
+    /* URIs to fixup */
+    test_url_parse("smb://SERVER:445/SHARE/My file.mp3", "smb", NULL, NULL, "SERVER", 445, NULL, NULL);
+    test_url_parse_fixup("smb://SERVER:445/SHARE/My file.mp3", "smb", NULL, NULL, "SERVER", 445, "/SHARE/My%20file.mp3", NULL);
 
     /* Reference test cases for reference URI resolution */
     static const char *rfc3986_cases[] =

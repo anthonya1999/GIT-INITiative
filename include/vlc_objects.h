@@ -94,31 +94,13 @@ VLC_API void *vlc_object_create( vlc_object_t *, size_t ) VLC_MALLOC VLC_USED;
 VLC_API vlc_object_t *vlc_object_find_name( vlc_object_t *, const char * ) VLC_USED VLC_DEPRECATED;
 
 /**
- * Adds a weak reference to an object.
- *
- * This atomically increments the reference count of an object.
- */
-VLC_API void * vlc_object_hold(vlc_object_t *obj);
-
-/**
- * Removes a weak reference to an object.
- *
- * This atomically decrements the reference count.
- * If the count reaches zero, the object is destroyed.
- */
-VLC_API void vlc_object_release(vlc_object_t *obj);
-
-/**
  * Drops the strong reference to an object.
  *
  * This removes the initial strong reference to a given object. This must be
  * called exactly once per allocated object after it is no longer needed,
  * matching vlc_object_create() or vlc_custom_create().
  */
-static inline void vlc_object_delete(vlc_object_t *obj)
-{
-    vlc_object_release(obj);
-}
+VLC_API void vlc_object_delete(vlc_object_t *obj);
 #define vlc_object_delete(obj) vlc_object_delete(VLC_OBJECT(obj))
 
 VLC_API size_t vlc_list_children(vlc_object_t *, vlc_object_t **, size_t) VLC_USED;
@@ -167,12 +149,6 @@ static inline struct vlc_logger *vlc_object_logger(vlc_object_t *obj)
 #define vlc_object_find_name(a,b) \
     vlc_object_find_name( VLC_OBJECT(a),b)
 
-#define vlc_object_hold(a) \
-    vlc_object_hold( VLC_OBJECT(a) )
-
-#define vlc_object_release(a) \
-    vlc_object_release( VLC_OBJECT(a) )
-
 VLC_USED
 static inline libvlc_int_t *vlc_object_instance(vlc_object_t *obj)
 {
@@ -187,41 +163,42 @@ static inline libvlc_int_t *vlc_object_instance(vlc_object_t *obj)
 #define vlc_object_instance(o) vlc_object_instance(VLC_OBJECT(o))
 
 /* Here for backward compatibility. TODO: Move to <vlc_input.h>! */
-static inline input_thread_t *input_Hold(input_thread_t *input)
-{
-    vlc_object_hold((vlc_object_t *)input);
-    return input;
-}
-
-static inline void input_Release(input_thread_t *input)
-{
-    vlc_object_release((vlc_object_t *)input);
-}
+VLC_API input_thread_t *input_Hold(input_thread_t *input);
+VLC_API void input_Release(input_thread_t *input);
 
 /* Here for backward compatibility. TODO: Move to <vlc_vout.h>! */
-static inline vout_thread_t *vout_Hold(vout_thread_t *vout)
-{
-    vlc_object_hold((vlc_object_t *)vout);
-    return vout;
-}
-
-static inline void vout_Release(vout_thread_t *vout)
-{
-    vlc_object_release((vlc_object_t *)vout);
-}
+VLC_API vout_thread_t *vout_Hold(vout_thread_t *vout);
+VLC_API void vout_Release(vout_thread_t *vout);
 
 /* Here for backward compatibility. TODO: Move to <vlc_aout.h>! */
-static inline audio_output_t *aout_Hold(audio_output_t *aout)
+VLC_API audio_output_t *aout_Hold(audio_output_t *aout);
+VLC_API void aout_Release(audio_output_t *aout);
+
+/* TODO: remove vlc_object_hold/_release() for GUIs, remove this */
+VLC_DEPRECATED static inline void *vlc_object_hold(vlc_object_t *o)
 {
-    vlc_object_hold((vlc_object_t *)aout);
-    return aout;
+    const char *tn = vlc_object_typename(o);
+
+    if (!strcmp(tn, "input"))
+        input_Hold((input_thread_t *)o);
+    if (!strcmp(tn, "audio output"))
+        aout_Hold((audio_output_t *)o);
+    if (!strcmp(tn, "video output"))
+        vout_Hold((vout_thread_t *)o);
+    return o;
 }
 
-static inline void aout_Release(audio_output_t *aout)
+static inline void vlc_object_release(vlc_object_t *o)
 {
-    vlc_object_release((vlc_object_t *)aout);
-}
+    const char *tn = vlc_object_typename(o);
 
+    if (!strcmp(tn, "input"))
+        input_Release((input_thread_t *)o);
+    if (!strcmp(tn, "audio output"))
+        aout_Release((audio_output_t *)o);
+    if (!strcmp(tn, "video output"))
+        vout_Release((vout_thread_t *)o);
+}
 
 /**
  * @defgroup objres Object resources

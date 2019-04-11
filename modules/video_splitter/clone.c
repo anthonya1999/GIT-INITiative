@@ -146,10 +146,6 @@ static int Open( vlc_object_t *p_this )
     {
         video_splitter_output_t *p_cfg = &p_splitter->p_output[i];
         video_format_Copy( &p_cfg->fmt, &p_splitter->fmt );
-        p_cfg->window.i_x = 0;
-        p_cfg->window.i_y = 0;
-        p_cfg->window.align.horizontal = VLC_VIDEO_ALIGN_CENTER;
-        p_cfg->window.align.vertical   = VLC_VIDEO_ALIGN_CENTER;
     }
 
     /* */

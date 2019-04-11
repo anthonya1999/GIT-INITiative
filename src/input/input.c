@@ -57,11 +57,17 @@
 /*****************************************************************************
  * Local prototypes
  *****************************************************************************/
+enum input_create_option {
+    INPUT_CREATE_OPTION_NONE,
+    INPUT_CREATE_OPTION_PREPARSING,
+    INPUT_CREATE_OPTION_THUMBNAILING,
+};
+
 static  void *Run( void * );
 static  void *Preparse( void * );
 
 static input_thread_t * Create  ( vlc_object_t *, input_thread_events_cb, void *,
-                                  input_item_t *, bool, bool,
+                                  input_item_t *, enum input_create_option option,
                                   input_resource_t *, vlc_renderer_item_t * );
 static  int             Init    ( input_thread_t *p_input );
 static void             End     ( input_thread_t *p_input );
@@ -128,8 +134,8 @@ input_thread_t *input_Create( vlc_object_t *p_parent,
                               input_resource_t *p_resource,
                               vlc_renderer_item_t *p_renderer )
 {
-    return Create( p_parent, events_cb, events_data, p_item, false,
-                   false, p_resource, p_renderer );
+    return Create( p_parent, events_cb, events_data, p_item,
+                   INPUT_CREATE_OPTION_NONE, p_resource, p_renderer );
 }
 
 #undef input_Read
@@ -144,7 +150,7 @@ int input_Read( vlc_object_t *p_parent, input_item_t *p_item,
                 input_thread_events_cb events_cb, void *events_data )
 {
     input_thread_t *p_input = Create( p_parent, events_cb, events_data, p_item,
-                                      false, false, NULL, NULL );
+                                      INPUT_CREATE_OPTION_NONE, NULL, NULL );
     if( !p_input )
         return VLC_EGENERIC;
 
@@ -162,14 +168,16 @@ input_thread_t *input_CreatePreparser( vlc_object_t *parent,
                                        input_thread_events_cb events_cb,
                                        void *events_data, input_item_t *item )
 {
-    return Create( parent, events_cb, events_data, item, true, false, NULL, NULL );
+    return Create( parent, events_cb, events_data, item,
+                   INPUT_CREATE_OPTION_PREPARSING, NULL, NULL );
 }
 
 input_thread_t *input_CreateThumbnailer(vlc_object_t *obj,
                                         input_thread_events_cb events_cb,
                                         void *events_data, input_item_t *item)
 {
-    return Create( obj, events_cb, events_data, item, false, true, NULL, NULL );
+    return Create( obj, events_cb, events_data, item,
+                   INPUT_CREATE_OPTION_THUMBNAILING, NULL, NULL );
 }
 
 /**
@@ -232,7 +240,7 @@ void input_Close( input_thread_t *p_input )
     if( input_priv(p_input)->is_running )
         vlc_join( input_priv(p_input)->thread, NULL );
     vlc_interrupt_deinit( &input_priv(p_input)->interrupt );
-    vlc_object_delete(p_input);
+    input_Release(p_input);
 }
 
 void input_SetTime( input_thread_t *p_input, vlc_tick_t i_time, bool b_fast )
@@ -251,44 +259,6 @@ void input_SetPosition( input_thread_t *p_input, float f_position, bool b_fast )
     param.pos.f_val = f_position;
     param.pos.b_fast_seek = b_fast;
     input_ControlPush( p_input, INPUT_CONTROL_SET_POSITION, &param );
-}
-
-/**
- * Input destructor (called when the object's refcount reaches 0).
- */
-static void input_Destructor( vlc_object_t *obj )
-{
-    input_thread_t *p_input = (input_thread_t *)obj;
-    input_thread_private_t *priv = input_priv(p_input);
-#ifndef NDEBUG
-    char * psz_name = input_item_GetName( priv->p_item );
-    msg_Dbg( p_input, "Destroying the input for '%s'", psz_name);
-    free( psz_name );
-#endif
-
-    if( priv->p_renderer )
-        vlc_renderer_item_release( priv->p_renderer );
-    if( priv->p_es_out_display )
-        es_out_Delete( priv->p_es_out_display );
-
-    if( priv->p_resource )
-        input_resource_Release( priv->p_resource );
-    if( priv->p_resource_private )
-        input_resource_Release( priv->p_resource_private );
-
-    input_item_Release( priv->p_item );
-
-    if( priv->stats != NULL )
-        input_stats_Destroy( priv->stats );
-
-    for( size_t i = 0; i < priv->i_control; i++ )
-    {
-        input_control_t *p_ctrl = &priv->control[i];
-        ControlRelease( p_ctrl->i_type, &p_ctrl->param );
-    }
-
-    vlc_cond_destroy( &priv->wait_control );
-    vlc_mutex_destroy( &priv->lock_control );
 }
 
 /**
@@ -312,7 +282,7 @@ input_item_t *input_GetItem( input_thread_t *p_input )
 static input_thread_t *Create( vlc_object_t *p_parent,
                                input_thread_events_cb events_cb, void *events_data,
                                input_item_t *p_item,
-                               bool b_preparsing, bool b_thumbnailing,
+                               enum input_create_option option,
                                input_resource_t *p_resource,
                                vlc_renderer_item_t *p_renderer )
 {
@@ -326,8 +296,20 @@ static input_thread_t *Create( vlc_object_t *p_parent,
     input_thread_t *p_input = &priv->input;
 
     char * psz_name = input_item_GetName( p_item );
-    msg_Dbg( p_input, "Creating an input for %s'%s'",
-             b_preparsing ? "preparsing " : "", psz_name);
+    const char *option_str;
+    switch (option)
+    {
+        case INPUT_CREATE_OPTION_PREPARSING:
+            option_str = "preparsing ";
+            break;
+        case INPUT_CREATE_OPTION_THUMBNAILING:
+            option_str = "thumbnailing ";
+            break;
+        default:
+            option_str = "";
+            break;
+    }
+    msg_Dbg( p_input, "Creating an input for %s'%s'", option_str, psz_name);
     free( psz_name );
 
     /* Parse input options */
@@ -336,7 +318,8 @@ static input_thread_t *Create( vlc_object_t *p_parent,
     /* Init Common fields */
     priv->events_cb = events_cb;
     priv->events_data = events_data;
-    priv->b_preparsing = b_preparsing;
+    priv->b_preparsing = option == INPUT_CREATE_OPTION_PREPARSING;
+    priv->b_thumbnailing = option == INPUT_CREATE_OPTION_THUMBNAILING;
     priv->b_can_pace_control = true;
     priv->i_start = 0;
     priv->i_time  = 0;
@@ -348,15 +331,14 @@ static input_thread_t *Create( vlc_object_t *p_parent,
     priv->is_running = false;
     priv->is_stopped = false;
     priv->b_recording = false;
-    priv->b_thumbnailing = b_thumbnailing;
     priv->rate = 1.f;
     memset( &priv->bookmark, 0, sizeof(priv->bookmark) );
     TAB_INIT( priv->i_bookmark, priv->pp_bookmark );
     TAB_INIT( priv->i_attachment, priv->attachment );
     priv->attachment_demux = NULL;
     priv->p_sout   = NULL;
-    priv->b_out_pace_control = b_thumbnailing;
-    priv->p_renderer = p_renderer && b_preparsing == false ?
+    priv->b_out_pace_control = priv->b_thumbnailing;
+    priv->p_renderer = p_renderer && priv->b_preparsing == false ?
                 vlc_renderer_item_hold( p_renderer ) : NULL;
 
     priv->viewpoint_changed = false;
@@ -512,9 +494,58 @@ static input_thread_t *Create( vlc_object_t *p_parent,
     priv->p_es_out = NULL;
 
     /* Set the destructor when we are sure we are initialized */
-    vlc_object_set_destructor( p_input, input_Destructor );
-
+    atomic_init(&priv->refs, 0);
     return p_input;
+}
+
+input_thread_t *input_Hold(input_thread_t *input)
+{
+    input_thread_private_t *priv = input_priv(input);
+
+    atomic_fetch_add_explicit(&priv->refs, 1, memory_order_relaxed);
+    return input;
+}
+
+void input_Release(input_thread_t *input)
+{
+    input_thread_private_t *priv = input_priv(input);
+
+    if (atomic_fetch_sub_explicit(&priv->refs, 1, memory_order_release))
+        return;
+
+    atomic_thread_fence(memory_order_acquire);
+
+#ifndef NDEBUG
+    char *name = input_item_GetName(priv->p_item);
+    msg_Dbg(input, "destroying input for '%s'", name);
+    free(name);
+#endif
+
+    if (priv->p_renderer != NULL)
+        vlc_renderer_item_release(priv->p_renderer);
+    if (priv->p_es_out_display != NULL)
+        es_out_Delete(priv->p_es_out_display);
+
+    if (priv->p_resource != NULL)
+        input_resource_Release(priv->p_resource);
+    if (priv->p_resource_private != NULL)
+        input_resource_Release(priv->p_resource_private);
+
+    input_item_Release(priv->p_item);
+
+    if (priv->stats != NULL)
+        input_stats_Destroy(priv->stats);
+
+    for (size_t i = 0; i < priv->i_control; i++)
+    {
+        input_control_t *ctrl = &priv->control[i];
+
+        ControlRelease(ctrl->i_type, &ctrl->param);
+    }
+
+    vlc_cond_destroy(&priv->wait_control);
+    vlc_mutex_destroy(&priv->lock_control);
+    vlc_object_delete(VLC_OBJECT(input));
 }
 
 /*****************************************************************************

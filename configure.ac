@@ -68,7 +68,7 @@ dnl Check for compiler properties
 AC_C_CONST
 AC_C_INLINE
 AC_C_RESTRICT
-AX_CXX_COMPILE_STDCXX_11([noext], [mandatory])
+AX_CXX_COMPILE_STDCXX_14([noext], [mandatory])
 
 dnl Extend the --help string at the current spot.
 AC_DEFUN([EXTEND_HELP_STRING], [m4_divert_once([HELP_ENABLE], [$1])])
@@ -233,7 +233,6 @@ case "${host_os}" in
       AC_DEFINE([_WIN32_WINNT], 0x0601, [Define to '0x0601' for Windows 7 APIs.])
     ])
     AC_DEFINE([_WIN32_IE], 0x0600, [Define to '0x0600' for IE 6.0 (and shell) APIs.])
-    AC_DEFINE([_UNICODE], [1], [Define to 1 for Unicode (Wide Chars) APIs.])
     AC_DEFINE([UNICODE], [1], [Define to 1 for Unicode (Wide Chars) APIs.])
     AC_DEFINE([_ISOC99_SOURCE], [1], [Extensions to ISO C89 from ISO C99.])
     AC_DEFINE([_ISOC11_SOURCE], [1], [Extensions to ISO C99 from ISO C11.])
@@ -339,9 +338,13 @@ AS_IF([test "${SYS}" = "mingw32"],[
   AS_IF([test "${enable_winstore_app}" = "yes"], [
     vlc_winstore_app=1
     LIBCOM=""
-     VLC_ADD_LIBS([libvlccore], [-lruntimeobject])
-     AC_LIBOBJ([gai_strerror])
-    ],[])
+    AX_APPEND_FLAG([-DWINSTORECOMPAT],[CFLAGS])
+    AX_APPEND_FLAG([-DWINSTORECOMPAT],[CPPFLAGS])
+    AX_APPEND_FLAG([-DWINSTORECOMPAT],[CXXFLAGS])
+    AX_APPEND_FLAG([-lwinstorecompat], [LDFLAGS])
+    VLC_ADD_LIBS([libvlccore], [-lruntimeobject])
+    AC_LIBOBJ([gai_strerror])
+  ],[])
   AC_SUBST([LIBCOM])
   ])
 AC_DEFINE_UNQUOTED(VLC_WINSTORE_APP, ${vlc_winstore_app}, [Define to 1 if you want to build for Windows Store apps])
@@ -463,7 +466,15 @@ AS_IF([test -n "${CONTRIB_DIR}"], [
   CFLAGS="${CFLAGS} -I${CONTRIB_DIR}/include"
   CXXFLAGS="${CXXFLAGS} -I${CONTRIB_DIR}/include"
   OBJCFLAGS="${OBJCFLAGS} -I${CONTRIB_DIR}/include -F${CONTRIB_DIR} -F${CONTRIB_DIR}/Frameworks"
-  export PKG_CONFIG_PATH="${CONTRIB_DIR}/lib/pkgconfig:${CONTRIB_DIR}/share/pkgconfig:$PKG_CONFIG_PATH"
+  PKG_CONFIG_PATH="${CONTRIB_DIR}/lib/pkgconfig:${CONTRIB_DIR}/share/pkgconfig:${PKG_CONFIG_PATH}"
+  case "${build_os}" in
+      mingw32)
+          export PKG_CONFIG_PATH=`cygpath -mp ${PKG_CONFIG_PATH}`
+      ;;
+      *)
+          export PKG_CONFIG_PATH="${PKG_CONFIG_PATH}"
+      ;;
+  esac
   LDFLAGS="${LDFLAGS} -L${CONTRIB_DIR}/lib"
 
   AS_IF([test -z "$LUAC"], [
@@ -911,9 +922,6 @@ AC_CHECK_TYPE(ssize_t,, [
 dnl It seems that autoconf detects pkg-config only during the first
 dnl PKG_CHECK_MODULES from configure.ac - which makes sense. But in our case,
 dnl it is nested within a conditional block, so it was not working right.
-dnl Make PKG_CONFIG_PATH precious so that it appears in the help and get saved
-AC_ARG_VAR(PKG_CONFIG_PATH,
-       [Paths where to find .pc not at the default location])
 PKG_PROG_PKG_CONFIG()
 
 dnl On some OS we need static linking
@@ -2092,7 +2100,7 @@ AC_ARG_ENABLE([libcddb],
   AS_HELP_STRING([--disable-libcddb],
     [disable CDDB for Audio CD (default enabled)]))
 
-if test "${enable_vcd}" != "no"
+if test "${enable_vcd}" != "no" -a "${enable_winstore_app}" != "yes"
 then
   AC_MSG_CHECKING(for cdrom_msf0 in linux/cdrom.h)
   AC_EGREP_HEADER(cdrom_msf0,linux/cdrom.h,[
@@ -2335,16 +2343,6 @@ dnl  Codec plugins
 dnl
 
 EXTEND_HELP_STRING([Codec plugins:])
-
-dnl
-dnl wmafixed plugin
-dnl
-AC_ARG_ENABLE([wma-fixed],
-  AS_HELP_STRING([--enable-wma-fixed], [libwma-fixed module (default disabled)]))
-if test "${enable_wma_fixed}" = "yes"
-then
-  VLC_ADD_PLUGIN([wma_fixed])
-fi
 
 dnl
 dnl shine encoder plugin
@@ -3541,11 +3539,6 @@ AC_ARG_ENABLE([directx],
   ])
 ])
 AS_IF([test "${enable_directx}" != "no"], [
-  dnl DirectDraw
-  AC_CHECK_HEADERS([ddraw.h], [
-    VLC_ADD_PLUGIN([directdraw])
-  ])
-
   dnl OpenGL
   AC_CHECK_HEADERS([GL/glew.h], [
     AC_CHECK_HEADERS([GL/wglew.h], [
@@ -4157,7 +4150,7 @@ AM_CONDITIONAL([HAVE_BITSTREAM], [test "${have_bitstream}" = "yes"])
 dnl
 dnl  SRT plugin
 dnl
-PKG_ENABLE_MODULES_VLC([SRT], [access_srt access_output_srt], [srt >= 1.2.2], [SRT input/output plugin], [auto], [], [], [-DENABLE_SRT])
+PKG_ENABLE_MODULES_VLC([SRT], [access_srt access_output_srt], [srt >= 1.3.0], [SRT input/output plugin], [auto], [], [], [-DENABLE_SRT])
 
 EXTEND_HELP_STRING([Visualisations and Video filter plugins:])
 dnl

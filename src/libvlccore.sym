@@ -28,6 +28,8 @@ aout_FiltersDrain
 aout_FiltersFlush
 aout_FiltersPlay
 aout_FiltersAdjustResampling
+aout_Hold
+aout_Release
 block_Alloc
 block_FifoCount
 block_FifoEmpty
@@ -218,6 +220,8 @@ input_resource_PutAout
 input_resource_ResetAout
 input_Start
 input_Stop
+input_Hold
+input_Release
 input_vaControl
 input_SetTime
 input_SetPosition
@@ -671,9 +675,8 @@ vlc_mutex_unlock
 vlc_mutex_marked
 vlc_global_mutex
 vlc_object_create
+vlc_object_delete
 vlc_object_find_name
-vlc_object_hold
-vlc_object_release
 vlc_object_typename
 vlc_object_parent
 vlc_object_Log
@@ -744,6 +747,8 @@ vlm_MessageNew
 vlm_MessageSimpleNew
 vlm_New
 vout_Close
+vout_Hold
+vout_Release
 vout_GetPicture
 vout_PutPicture
 vout_PutSubpicture
@@ -763,7 +768,6 @@ vout_window_Disable
 vout_display_GetDefaultDisplaySize
 vout_display_PlacePicture
 vout_display_SendEventPicturesInvalid
-vout_display_SendMouseMovedDisplayCoordinates
 vout_display_New
 vout_display_Delete
 vout_display_Prepare

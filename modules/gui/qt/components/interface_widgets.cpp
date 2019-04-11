@@ -32,8 +32,6 @@
 #include "dialogs_provider.hpp"
 #include "util/customwidgets.hpp"               // qtEventToVLCKey, QVLCStackedWidget
 
-#include "menus.hpp"             /* Popup menu on bgWidget */
-
 #include <QLabel>
 #include <QToolButton>
 #include <QPalette>
@@ -137,11 +135,15 @@ void VideoWidget::request( struct vout_window_t *p_wnd )
        management */
     /* This is currently disabled on X11 as it does not seem to improve
      * performance, but causes the video widget to be transparent... */
-#if !defined (QT5_HAS_X11)
-    stable->setAttribute( Qt::WA_PaintOnScreen, true );
-#else
+#if defined (QT5_HAS_X11)
     stable->setMouseTracking( true );
     setMouseTracking( true );
+#elif defined(_WIN32)
+    stable->setAttribute( Qt::WA_PaintOnScreen, true );
+    stable->setMouseTracking( true );
+    setMouseTracking( true );
+#else
+    stable->setAttribute( Qt::WA_PaintOnScreen, true );
 #endif
     layout->addWidget( stable );
 

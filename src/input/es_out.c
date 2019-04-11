@@ -1841,6 +1841,11 @@ static void EsOutCreateDecoder( es_out_t *out, es_out_id_t *p_es )
             input_DecoderSetVoutMouseEvent( dec, p_es->mouse_event_cb,
                                             p_es->mouse_event_userdata );
     }
+    else
+    {
+        vlc_clock_Delete( p_es->p_clock );
+        p_es->p_clock = NULL;
+    }
     p_es->p_dec = dec;
 
     EsOutDecoderChangeDelay( out, p_es );
@@ -2940,24 +2945,7 @@ static int EsOutVaControlLocked( es_out_t *out, int i_query, va_list args )
         if( !p_es )
             return VLC_EGENERIC;
 
-        vlc_object_t    **pp_decoder = va_arg( args, vlc_object_t ** );
-        vout_thread_t   **pp_vout    = va_arg( args, vout_thread_t ** );
-        audio_output_t **pp_aout    = va_arg( args, audio_output_t ** );
-        if( p_es->p_dec )
-        {
-            if( pp_decoder )
-                *pp_decoder = vlc_object_hold( p_es->p_dec );
-            input_DecoderGetObjects( p_es->p_dec, pp_vout, pp_aout );
-        }
-        else
-        {
-            if( pp_decoder )
-                *pp_decoder = NULL;
-            if( pp_vout )
-                *pp_vout = NULL;
-            if( pp_aout )
-                *pp_aout = NULL;
-        }
+        *va_arg( args, vlc_object_t ** ) = VLC_OBJECT(p_es->p_dec);
         return VLC_SUCCESS;
     }
 

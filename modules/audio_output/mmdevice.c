@@ -162,13 +162,13 @@ static void Pause(audio_output_t *aout, bool paused, vlc_tick_t date)
     (void) date;
 }
 
-static void Flush(audio_output_t *aout, bool wait)
+static void Flush(audio_output_t *aout)
 {
     aout_sys_t *sys = aout->sys;
     HRESULT hr;
 
     EnterMTA();
-    hr = aout_stream_Flush(sys->stream, wait);
+    hr = aout_stream_Flush(sys->stream);
     LeaveMTA();
 
     vlc_FromHR(aout, hr);
@@ -756,7 +756,7 @@ static int DeviceSelectLocked(audio_output_t *aout, const char *id)
 
     if (id != NULL && strcmp(id, default_device_b) != 0)
     {
-        sys->requested_device = ToWide(id);
+        sys->requested_device = ToWide(id); /* FIXME leak */
         if (unlikely(sys->requested_device == NULL))
             return -1;
     }
@@ -785,18 +785,6 @@ static int DeviceSelect(audio_output_t *aout, const char *id)
 }
 
 /*** Initialization / deinitialization **/
-static wchar_t *var_InheritWide(vlc_object_t *obj, const char *name)
-{
-    char *v8 = var_InheritString(obj, name);
-    if (v8 == NULL)
-        return NULL;
-
-    wchar_t *v16 = ToWide(v8);
-    free(v8);
-    return v16;
-}
-#define var_InheritWide(o,n) var_InheritWide(VLC_OBJECT(o),n)
-
 /** MMDevice audio output thread.
  * This thread takes cares of the audio session control. Inconveniently enough,
  * the audio session control interface must:
@@ -896,9 +884,17 @@ static HRESULT MMSession(audio_output_t *aout, IMMDeviceEnumerator *it)
                                                          &control);
         if (SUCCEEDED(hr))
         {
-            wchar_t *ua = var_InheritWide(aout, "user-agent");
-            IAudioSessionControl_SetDisplayName(control, ua, NULL);
-            free(ua);
+            char *ua = var_InheritString(aout, "user-agent");
+            if (ua != NULL)
+            {
+                wchar_t *wua = ToWide(ua);
+                if (likely(wua != NULL))
+                {
+                    IAudioSessionControl_SetDisplayName(control, wua, NULL);
+                    free(wua);
+                }
+                free(ua);
+            }
 
             IAudioSessionControl_RegisterAudioSessionNotification(control,
                                                          &sys->session_events);
@@ -1286,7 +1282,7 @@ static int Open(vlc_object_t *obj)
     char *saved_device_b = var_InheritString(aout, "mmdevice-audio-device");
     if (saved_device_b != NULL && strcmp(saved_device_b, default_device_b) != 0)
     {
-        sys->requested_device = ToWide(saved_device_b);
+        sys->requested_device = ToWide(saved_device_b); /* FIXME leak */
         free(saved_device_b);
 
         if (unlikely(sys->requested_device == NULL))

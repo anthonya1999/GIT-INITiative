@@ -33,99 +33,103 @@
 
 #include <libgen.h>
 #include <dlfcn.h>
-#include <mach-o/dyld.h>
 
-#include <CoreFoundation/CoreFoundation.h>
+#include <Foundation/Foundation.h>
 
-char *config_GetLibDir (void)
+static bool config_isBundle()
 {
-    /* Get the full program path and name */
-    /* First try to see if we are linked to the framework */
-    for (unsigned i = 0; i < _dyld_image_count(); i++)
-    {
-        const char *psz_img_name = _dyld_get_image_name(i);
-        const char *p = strstr( psz_img_name, "VLCKit.framework/Versions/" );
-
-        /* Check for "VLCKit.framework/Versions/Current/VLCKit",
-         * as well as "VLCKit.framework/Versions/A/VLCKit" and
-         * "VLC.framework/Versions/B/VLCKit" */
-        if (p != NULL) {
-            /* Look for the next forward slash */
-            p += 26; /* p_char += strlen(" VLCKit.framework/Versions/" ) */
-            p += strcspn( p, "/" );
-
-            /* If the string ends with VLCKit then we've found a winner */
-            if (!strcmp( p, "/VLCKit"))
-                return strdup( dirname(psz_img_name) );
-        }
-
-        /* Do we end by "VLC"? If so we are the legacy VLC.app that doesn't
-         * link to VLCKit. */
-        size_t len = strlen(psz_img_name);
-        if (len >= 3 && !strcmp( psz_img_name + len - 3, "VLC"))
-            return strdup( dirname(psz_img_name) );
-
-        /* Do we end by "VLC-Plugin"? oh, we must be the NPAPI plugin */
-        if (len >= 10 && !strcmp( psz_img_name + len - 10, "VLC-Plugin"))
-            return strdup( dirname(psz_img_name) );
-
-        /* Do we end by "VLC for iOS"? so we are the iOS app */
-        if (len >= 11 && !strcmp( psz_img_name + len - 11, "VLC for iOS"))
-            return strdup( dirname(psz_img_name) );
-
-        /* Do we end by "VLC-TV"? so we are the tvOS app */
-        if (len >= 6 && !strcmp( psz_img_name + len - 6, "VLC-TV"))
-            return strdup( dirname(psz_img_name) );
-    }
-
-    /* we are not part of any Mac-style package but were installed
-     * the UNIX way. let's trick-around a bit */
-    Dl_info info;
-    if (dladdr(system_Init, &info)) {
-        char *incompletepath = strdup(dirname( (char *)info.dli_fname ));
-        char *path = NULL;
-        asprintf(&path, "%s/"PACKAGE, incompletepath);
-        free(incompletepath);
-        return path;
-    }
-
-    /* should never happen */
-    abort ();
+    NSBundle *bundle = [NSBundle mainBundle];
+    NSString *bundlePath = bundle.bundlePath;
+    return [bundlePath hasSuffix:@".app"] || [bundlePath hasSuffix:@".framework"];
 }
 
-static char *config_GetDataDir(void)
+static char *config_getLibraryDirReal(const char *fallback)
 {
-    const char *path = getenv ("VLC_DATA_PATH");
-    if (path)
-        return strdup (path);
+    const char *dir = getenv("VLC_LIB_PATH");
+    if (dir) {
+        return strdup(dir);
+    }
 
-    char *vlcpath = config_GetLibDir ();
-    char *datadir;
+    if (config_isBundle()) {
+        NSBundle *bundle = [NSBundle mainBundle];
+        NSString *path = bundle.privateFrameworksPath;
+        if (!path)
+            return NULL;
 
-    if (asprintf (&datadir, "%s/share", vlcpath) == -1)
-        datadir = NULL;
+        return strdup(path.UTF8String);
+    }
 
-    free (vlcpath);
-    return datadir;
+    if (fallback)
+        return strdup(fallback);
+
+    return NULL;
+}
+
+static char *config_getDataDirReal(const char *fallback)
+{
+    const char *dir = getenv("VLC_DATA_PATH");
+    if (dir) {
+        return strdup(dir);
+    }
+
+    if (config_isBundle()) {
+        NSBundle *bundle = [NSBundle mainBundle];
+        NSString *path = bundle.resourcePath;
+        if (!path)
+            return NULL;
+
+        path = [path stringByAppendingPathComponent:@"share"];
+        return strdup(path.UTF8String);
+    }
+
+    if (fallback)
+        return strdup(fallback);
+
+    return NULL;
+}
+
+char *config_GetLibDir(void)
+{
+    return config_getLibraryDirReal(LIBDIR);
 }
 
 char *config_GetSysPath(vlc_sysdir_t type, const char *filename)
 {
     char *dir = NULL;
-
     switch (type)
     {
         case VLC_PKG_DATA_DIR:
-            dir = config_GetDataDir();
+            dir = config_getDataDirReal(PKGDATADIR);
             break;
+
         case VLC_PKG_LIB_DIR:
+            dir = config_getLibraryDirReal(PKGLIBDIR);
+            break;
+        case VLC_LIB_DIR:
+            dir = config_getLibraryDirReal(LIBDIR);
+            break;
+
+
         case VLC_PKG_LIBEXEC_DIR:
-            dir = config_GetLibDir();
+            dir = config_getLibraryDirReal(PKGLIBEXECDIR);
             break;
-        case VLC_SYSDATA_DIR:
+        case VLC_LIBEXEC_DIR:
+            dir = config_getLibraryDirReal(LIBEXECDIR);
             break;
+
         case VLC_LOCALE_DIR:
-            dir = config_GetSysPath(VLC_PKG_DATA_DIR, "locale");
+            dir = config_getDataDirReal(NULL);
+            if (dir) {
+                NSString *result = [NSString stringWithFormat:@"%s/locale", dir];
+                free(dir);
+                dir = strdup(result.UTF8String);
+                break;
+            }
+
+            dir = strdup(LOCALEDIR);
+            break;
+
+        case VLC_SYSDATA_DIR:
             break;
         default:
             vlc_assert_unreachable();
@@ -152,17 +156,17 @@ static char *config_GetHomeDir (void)
 
 static char *getAppDependentDir(vlc_userdir_t type)
 {
-    const char *psz_path;
+    NSString *formatString;
     switch (type) {
         case VLC_CONFIG_DIR:
-            psz_path = "%s/Library/Preferences/%s";
+            formatString = @"%s/Library/Preferences/%@";
             break;
         case VLC_TEMPLATES_DIR:
         case VLC_USERDATA_DIR:
-            psz_path = "%s/Library/Application Support/%s";
+            formatString = @"%s/Library/Application Support/%@";
             break;
         case VLC_CACHE_DIR:
-            psz_path = "%s/Library/Caches/%s";
+            formatString = @"%s/Library/Caches/%@";
             break;
         default:
             vlc_assert_unreachable();
@@ -170,24 +174,18 @@ static char *getAppDependentDir(vlc_userdir_t type)
     }
 
     // Default fallback
-    const char *fallback = "org.videolan.vlc";
-    char *name = NULL;
-
-    CFBundleRef mainBundle = CFBundleGetMainBundle();
+    NSString *identifier = @"org.videolan.vlc";
+    NSBundle *mainBundle = [NSBundle mainBundle];
     if (mainBundle) {
-        CFStringRef identifierAsNS = CFBundleGetIdentifier(mainBundle);
-        if (identifierAsNS)
-            name = FromCFString(identifierAsNS, kCFStringEncodingUTF8);
+        NSString *bundleId = mainBundle.bundleIdentifier;
+        if (bundleId)
+            identifier = bundleId;
     }
 
-    char *psz_parent = config_GetHomeDir ();
-    char *psz_dir;
-    if ( asprintf( &psz_dir, psz_path, psz_parent, (name) ? name : fallback) == -1 )
-        psz_dir = NULL;
-    free(psz_parent);
-    free(name);
-
-    return psz_dir;
+    char *homeDir = config_GetHomeDir();
+    NSString *result = [NSString stringWithFormat:formatString, homeDir, identifier];
+    free(homeDir);
+    return strdup(result.UTF8String);
 }
 
 char *config_GetUserDir (vlc_userdir_t type)

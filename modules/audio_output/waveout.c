@@ -79,7 +79,8 @@ static void WaveOutClearBuffer( HWAVEOUT, WAVEHDR *);
 static int ReloadWaveoutDevices( const char *, char ***, char *** );
 static uint32_t findDeviceID(char *);
 static int WaveOutTimeGet(audio_output_t * , vlc_tick_t *);
-static void WaveOutFlush( audio_output_t *, bool);
+static void WaveOutFlush( audio_output_t *);
+static void WaveOutDrain( audio_output_t *);
 static void WaveOutPause( audio_output_t *, bool, vlc_tick_t);
 static int WaveoutVolumeSet(audio_output_t * p_aout, float volume);
 static int WaveoutMuteSet(audio_output_t * p_aout, bool mute);
@@ -177,6 +178,7 @@ static int Start( audio_output_t *p_aout, audio_sample_format_t *restrict fmt )
     p_aout->play = Play;
     p_aout->pause = WaveOutPause;
     p_aout->flush = WaveOutFlush;
+    p_aout->drain = WaveOutDrain;
 
     aout_sys_t *sys = p_aout->sys;
 
@@ -390,31 +392,10 @@ static void Stop( audio_output_t *p_aout )
     aout_sys_t *p_sys = p_aout->sys;
 
     /* Before calling waveOutClose we must reset the device */
-    MMRESULT result = waveOutReset( p_sys->h_waveout );
-    if(result != MMSYSERR_NOERROR)
-    {
-       msg_Err( p_aout, "waveOutReset failed 0x%x", result );
-       /*
-        now we must wait, that all buffers are played
-        because cancel doesn't work in this case...
-       */
-       if(result == MMSYSERR_NOTSUPPORTED)
-       {
-           /*
-             clear currently played (done) buffers,
-             if returnvalue > 0 (means some buffer still playing)
-             wait for the driver event callback that one buffer
-             is finished with playing, and check again
-             the timeout of 5000ms is just, an emergency exit
-             of this loop, to avoid deadlock in case of other
-             (currently not known bugs, problems, errors cases?)
-           */
-            WaveOutFlush( p_aout, true );
-       }
-    }
+    waveOutReset( p_sys->h_waveout );
 
     /* wait for the frames to be queued in cleaning list */
-    WaveOutFlush( p_aout, true );
+    WaveOutDrain( p_aout );
     WaveOutClean( p_sys );
 
     /* now we can Close the device */
@@ -869,27 +850,27 @@ static int WaveOutTimeGet(audio_output_t * p_aout, vlc_tick_t *delay)
     return 0;
 }
 
-static void WaveOutFlush( audio_output_t *p_aout, bool wait)
+static void WaveOutFlush( audio_output_t *p_aout)
 {
     MMRESULT res;
     aout_sys_t *sys = p_aout->sys;
 
-    if( !wait )
+    res  = waveOutReset( sys->h_waveout );
+    sys->i_played_length = 0;
+    if( res != MMSYSERR_NOERROR )
+        msg_Err( p_aout, "waveOutReset failed");
+}
+
+static void WaveOutDrain( audio_output_t *p_aout)
+{
+    aout_sys_t *sys = p_aout->sys;
+
+    vlc_mutex_lock( &sys->lock );
+    while( sys->i_frames )
     {
-        res  = waveOutReset( sys->h_waveout );
-        sys->i_played_length = 0;
-        if( res != MMSYSERR_NOERROR )
-            msg_Err( p_aout, "waveOutReset failed");
+        vlc_cond_wait( &sys->cond, &sys->lock );
     }
-    else
-    {
-        vlc_mutex_lock( &sys->lock );
-        while( sys->i_frames )
-        {
-            vlc_cond_wait( &sys->cond, &sys->lock );
-        }
-        vlc_mutex_unlock( &sys->lock );
-    }
+    vlc_mutex_unlock( &sys->lock );
 }
 
 static void WaveOutPause( audio_output_t * p_aout, bool pause, vlc_tick_t date)

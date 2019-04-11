@@ -30,12 +30,12 @@
 #import <vlc_vout_window.h>
 
 #import "extensions/misc.h"
-#import "windows/video/VLCFSPanelController.h"
 #import "windows/video/VLCVideoWindowCommon.h"
 
 @class VLCMainWindowControlsBar;
 @class VLCVoutView;
 @class PXSourceList;
+@class VLCFSPanelController;
 
 typedef enum {
     psUserEvent,
@@ -113,9 +113,6 @@ typedef enum {
 - (void)updateTimeSlider;
 - (void)updateWindow;
 - (void)updateName;
-- (void)setPause;
-- (void)setPlay;
-- (void)updateVolumeSlider;
 
 - (void)showFullscreenController;
 

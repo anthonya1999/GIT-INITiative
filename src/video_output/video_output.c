@@ -1285,6 +1285,8 @@ void vout_Flush(vout_thread_t *vout, vlc_tick_t date)
 {
     vout_thread_sys_t *sys = vout->p;
 
+    assert(vout->p->original.i_chroma != 0);
+
     vout_control_Hold(&sys->control);
     vout_FlushUnlocked(vout, false, date);
     vout_control_Release(&sys->control);
@@ -1696,15 +1698,15 @@ void vout_Close(vout_thread_t *vout)
     sys->spu = NULL;
     vlc_mutex_unlock(&sys->spu_lock);
 
-    vlc_object_delete(vout);
+    vout_Release(vout);
 }
 
-static void VoutDestructor(vlc_object_t *object)
+void vout_Release(vout_thread_t *vout)
 {
-    vout_thread_t *vout = (vout_thread_t *)object;
+    vout_thread_sys_t *sys = vout->p;
 
-    /* Make sure the vout was stopped first */
-    //assert(!vout->p_module);
+    if (atomic_fetch_sub_explicit(&sys->refs, 1, memory_order_release))
+        return;
 
     free(vout->p->splitter_name);
 
@@ -1720,6 +1722,7 @@ static void VoutDestructor(vlc_object_t *object)
     /* */
     vout_snapshot_Destroy(vout->p->snapshot);
     video_format_Clean(&vout->p->original);
+    vlc_object_delete(VLC_OBJECT(vout));
 }
 
 vout_thread_t *vout_Create(vlc_object_t *object)
@@ -1777,6 +1780,12 @@ vout_thread_t *vout_Create(vlc_object_t *object)
 
     /* Window */
     sys->display_cfg.window = vout_display_window_New(vout);
+    if (sys->display_cfg.window == NULL) {
+        spu_Destroy(sys->spu);
+        vlc_object_delete(vout);
+        return NULL;
+    }
+
     if (sys->splitter_name != NULL)
         var_Destroy(vout, "window");
     sys->window_active = false;
@@ -1786,13 +1795,7 @@ vout_thread_t *vout_Create(vlc_object_t *object)
     vout_chrono_Init(&sys->render, 5, VLC_TICK_FROM_MS(10));
 
     /* */
-    vlc_object_set_destructor(vout, VoutDestructor);
-
-    if (sys->display_cfg.window == NULL) {
-        spu_Destroy(sys->spu);
-        vlc_object_delete(vout);
-        return NULL;
-    }
+    atomic_init(&sys->refs, 0);
 
     if (var_InheritBool(vout, "video-wallpaper"))
         vout_window_SetState(sys->display_cfg.window, VOUT_WINDOW_STATE_BELOW);
@@ -1802,9 +1805,18 @@ vout_thread_t *vout_Create(vlc_object_t *object)
     return vout;
 }
 
+vout_thread_t *vout_Hold(vout_thread_t *vout)
+{
+    vout_thread_sys_t *sys = vout->p;
+
+    atomic_fetch_add_explicit(&sys->refs, 1, memory_order_relaxed);
+    return vout;
+}
+
 int vout_Request(const vout_configuration_t *cfg, input_thread_t *input)
 {
     vout_thread_t *vout = cfg->vout;
+    vout_thread_sys_t *sys = vout->p;
 
     assert(vout != NULL);
     assert(cfg->fmt != NULL);
@@ -1819,8 +1831,8 @@ int vout_Request(const vout_configuration_t *cfg, input_thread_t *input)
     /* TODO: If dimensions are equal or slightly smaller, update the aspect
      * ratio and crop settings, instead of recreating a display.
      */
-    if (video_format_IsSimilar(&original, &vout->p->original)) {
-        if (cfg->dpb_size <= vout->p->dpb_size) {
+    if (video_format_IsSimilar(&original, &sys->original)) {
+        if (cfg->dpb_size <= sys->dpb_size) {
             video_format_Clean(&original);
             /* It is assumed that the SPU input matches input already. */
             return 0;
@@ -1828,12 +1840,10 @@ int vout_Request(const vout_configuration_t *cfg, input_thread_t *input)
         msg_Warn(vout, "DPB need to be increased");
     }
 
-    if (vout->p->original.i_chroma != 0)
+    if (sys->original.i_chroma != 0)
         vout_StopDisplay(vout);
 
     vout_ReinitInterlacingSupport(vout);
-
-    vout_thread_sys_t *sys = vout->p;
 
     sys->original = original;
 
@@ -1843,7 +1853,7 @@ int vout_Request(const vout_configuration_t *cfg, input_thread_t *input)
             .is_fullscreen = var_GetBool(vout, "fullscreen"),
             .is_decorated = var_InheritBool(vout, "video-deco"),
         // TODO: take pixel A/R, crop and zoom into account
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(_WIN32)
             .x = var_InheritInteger(vout, "video-x"),
             .y = var_InheritInteger(vout, "video-y"),
 #endif
@@ -1865,10 +1875,12 @@ int vout_Request(const vout_configuration_t *cfg, input_thread_t *input)
     sys->clock = cfg->clock;
     sys->delay = sys->spu_delay = 0;
 
-    vlc_mutex_unlock(&vout->p->window_lock);
+    vlc_mutex_unlock(&sys->window_lock);
 
-    if (vout_Start(vout, cfg)
-     || vlc_clone(&sys->thread, Thread, vout, VLC_THREAD_PRIORITY_OUTPUT)) {
+    if (vout_Start(vout, cfg))
+        goto error;
+    if (vlc_clone(&sys->thread, Thread, vout, VLC_THREAD_PRIORITY_OUTPUT)) {
+        vout_Stop(vout);
 error:
         msg_Err(vout, "video output creation failed");
         video_format_Clean(&sys->original);
@@ -1876,7 +1888,7 @@ error:
     }
 
     if (input != NULL)
-        spu_Attach(vout->p->spu, input);
+        spu_Attach(sys->spu, input);
     vout_IntfReinit(vout);
     return 0;
 }

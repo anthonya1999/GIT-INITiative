@@ -50,8 +50,6 @@ static_assert(VLC_PLAYER_TITLE_MENU == INPUT_TITLE_MENU &&
               VLC_PLAYER_TITLE_INTERACTIVE == INPUT_TITLE_INTERACTIVE,
               "player/input title flag mismatch");
 
-#define GAPLESS 0 /* TODO */
-
 typedef struct VLC_VECTOR(struct vlc_player_program *)
     vlc_player_program_vector;
 
@@ -171,11 +169,8 @@ struct vlc_player_t
     struct vlc_player_input *input;
 
     bool releasing_media;
-    bool has_next_media;
+    bool next_media_requested;
     input_item_t *next_media;
-#if GAPLESS
-    struct vlc_player_input *next_input;
-#endif
 
     enum vlc_player_state global_state;
     bool started;
@@ -225,15 +220,8 @@ struct vlc_player_t
     vlc_mutex_unlock(&player->vout_listeners_lock); \
 } while(0)
 
-#if GAPLESS
-#define vlc_player_foreach_inputs(it) \
-    for (struct vlc_player_input *it = player->input; \
-         it != NULL; \
-         it = (it == player->input ? player->next_input : NULL))
-#else
 #define vlc_player_foreach_inputs(it) \
     for (struct vlc_player_input *it = player->input; it != NULL; it = NULL)
-#endif
 
 static void
 input_thread_Events(input_thread_t *, const struct vlc_input_event *, void *);
@@ -290,7 +278,12 @@ vouts_osd_Message(vout_thread_t **vouts, size_t count, const char *fmt, ...)
     va_list args;
     va_start(args, fmt);
     for (size_t i = 0; i < count; ++i)
-        vout_OSDMessageVa(vouts[i], VOUT_SPU_CHANNEL_OSD, fmt, args);
+    {
+        va_list acpy;
+        va_copy(acpy, args);
+        vout_OSDMessageVa(vouts[i], VOUT_SPU_CHANNEL_OSD, fmt, acpy);
+        va_end(acpy);
+    }
     va_end(args);
 }
 
@@ -319,7 +312,12 @@ vlc_player_vout_OSDMessage(vlc_player_t *player, const char *fmt, ...)
     va_list args;
     va_start(args, fmt);
     for (size_t i = 0; i < count; ++i)
-        vout_OSDMessageVa(vouts[i], VOUT_SPU_CHANNEL_OSD, fmt, args);
+    {
+        va_list acpy;
+        va_copy(acpy, args);
+        vout_OSDMessageVa(vouts[i], VOUT_SPU_CHANNEL_OSD, fmt, acpy);
+        va_end(acpy);
+    }
     va_end(args);
 
     vlc_player_vout_OSDReleaseAll(player, vouts, count);
@@ -716,13 +714,13 @@ vlc_player_PrepareNextMedia(vlc_player_t *player)
 
     if (!player->media_provider 
      || player->media_stopped_action != VLC_PLAYER_MEDIA_STOPPED_CONTINUE
-     || player->has_next_media)
+     || player->next_media_requested)
         return;
 
     assert(player->next_media == NULL);
     player->next_media =
         player->media_provider->get_next(player, player->media_provider_data);
-    player->has_next_media = true;
+    player->next_media_requested = true;
 }
 
 static int
@@ -730,7 +728,7 @@ vlc_player_OpenNextMedia(vlc_player_t *player)
 {
     assert(player->input == NULL);
 
-    player->has_next_media = false;
+    player->next_media_requested = false;
 
     int ret = VLC_SUCCESS;
     if (player->releasing_media)
@@ -1911,16 +1909,6 @@ input_thread_Events(input_thread_t *input_thread,
                                  input->capabilities);
             break;
         case INPUT_EVENT_POSITION:
-#if GAPLESS
-            /* XXX case INPUT_EVENT_EOF: */
-            if (player->next_input == NULL)
-                break;
-            vlc_tick_t length = input->length;
-            vlc_tick_t time = event->position.ms;
-            if (length > 0 && time > 0
-             && length - time <= AOUT_MAX_PREPARE_TIME)
-                vlc_player_OpenNextMedia(player);
-#endif
             if (input->time != event->position.ms ||
                 input->position != event->position.percentage)
             {
@@ -2082,14 +2070,14 @@ vlc_player_SetCurrentMedia(vlc_player_t *player, input_item_t *media)
         /* Switch to this new media when the current input is stopped */
         player->next_media = input_item_Hold(media);
         player->releasing_media = false;
-        player->has_next_media = true;
+        player->next_media_requested = true;
     }
     else if (player->media)
     {
         /* The current media will be set to NULL once the current input is
          * stopped */
         player->releasing_media = true;
-        player->has_next_media = false;
+        player->next_media_requested = false;
     }
     else
         return VLC_SUCCESS;
@@ -2172,17 +2160,8 @@ vlc_player_InvalidateNextMedia(vlc_player_t *player)
         input_item_Release(player->next_media);
         player->next_media = NULL;
     }
-    player->has_next_media = false;
+    player->next_media_requested = false;
 
-#if GAPLESS
-    if (player->next_input)
-    {
-        /* Cause the get_next callback to be called when this input is
-         * dead */
-        vlc_player_destructor_AddInput(player, player->next_input);
-        player->next_input = NULL;
-    }
-#endif
 }
 
 int
@@ -2249,13 +2228,6 @@ vlc_player_Stop(vlc_player_t *player)
     vlc_player_destructor_AddInput(player, input);
     player->input = NULL;
 
-#if GAPLESS
-    if (player->next_input)
-    {
-        vlc_player_destructor_AddInput(player, next_input);
-        player->next_input = NULL;
-    }
-#endif
 }
 
 void
@@ -2438,7 +2410,7 @@ vlc_player_assert_seek_params(enum vlc_player_seek_speed speed,
     (void) speed; (void) whence;
 }
 
-static inline void
+static void
 vlc_player_vout_OSDPosition(vlc_player_t *player,
                             struct vlc_player_input *input, vlc_tick_t time,
                             float position, enum vlc_player_whence whence)
@@ -3472,10 +3444,6 @@ vlc_player_Delete(vlc_player_t *player)
 
     if (player->input)
         vlc_player_destructor_AddInput(player, player->input);
-#if GAPLESS
-    if (player->next_input)
-        vlc_player_destructor_AddInput(player, player->next_inpu);
-#endif
 
     player->deleting = true;
     vlc_cond_signal(&player->destructor.wait);
@@ -3541,11 +3509,8 @@ vlc_player_New(vlc_object_t *parent,
     player->error_count = 0;
 
     player->releasing_media = false;
-    player->has_next_media = false;
+    player->next_media_requested = false;
     player->next_media = NULL;
-#if GAPLESS
-    player->next_input = NULL;
-#endif
 
 #define VAR_CREATE(var, flag) do { \
     if (var_Create(player, var, flag) != VLC_SUCCESS) \

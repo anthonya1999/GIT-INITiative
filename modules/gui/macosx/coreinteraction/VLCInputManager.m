@@ -36,7 +36,6 @@
 @interface VLCInputManager()
 - (void)updateMainMenu;
 - (void)updateMainWindow;
-- (void)updateDelays;
 @end
 
 #pragma mark Callbacks
@@ -96,11 +95,6 @@ static int InputEvent(vlc_object_t *p_this, const char *psz_var,
             case INPUT_EVENT_ITEM_EPG:
                 break;
             case INPUT_EVENT_SIGNAL:
-                break;
-
-            case INPUT_EVENT_AUDIO_DELAY:
-            case INPUT_EVENT_SUBTITLE_DELAY:
-                [inputManager performSelectorOnMainThread:@selector(updateDelays) withObject:nil waitUntilDone:NO];
                 break;
 
             case INPUT_EVENT_DEAD:
@@ -220,7 +214,6 @@ static int InputEvent(vlc_object_t *p_this, const char *psz_var,
     }
 
     [self updateMainWindow];
-    [self updateDelays];
     [self updateMainMenu];
 
     /*
@@ -248,11 +241,8 @@ static int InputEvent(vlc_object_t *p_this, const char *psz_var,
         state = var_GetInteger(p_current_input, "state");
     }
 
-    if (state == PLAYING_S) {
-        [[o_main mainWindow] setPause];
-    } else {
+    if (state != PLAYING_S) {
         [[o_main mainMenu] setSubmenusEnabled: FALSE];
-        [[o_main mainWindow] setPlay];
 
         if (state == END_S || state == -1) {
             /* continue playback where you left off */
@@ -274,15 +264,9 @@ static int InputEvent(vlc_object_t *p_this, const char *psz_var,
     [[o_main mainWindow] updateName];
 }
 
-- (void)updateDelays
-{
-    [[[VLCMain sharedInstance] trackSyncPanel] updateValues];
-}
-
 - (void)updateMainMenu
 {
     [[o_main mainMenu] setupMenus];
-    [[VLCCoreInteraction sharedInstance] resetAtoB];
 }
 
 - (BOOL)hasInput

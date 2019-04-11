@@ -47,7 +47,7 @@ enum es_out_query_private_e
     ES_OUT_SET_ES_BY_ID,                            /* arg1= int, arg2= bool (forced) */
     ES_OUT_RESTART_ES_BY_ID,
     ES_OUT_SET_ES_DEFAULT_BY_ID,
-    ES_OUT_GET_ES_OBJECTS_BY_ID,                    /* arg1=int id, vlc_object_t **dec, vout_thread_t **, audio_output_t ** res=can fail*/
+    ES_OUT_GET_ES_OBJECTS_BY_ID,                    /* arg1=int id, vlc_object_t **dec res=can fail*/
 
     /* Stop all selected ES and save the stopped state in a context. free the
      * context or call ES_OUT_STOP_ALL_ES */
@@ -153,11 +153,6 @@ static inline void es_out_SetJitter( es_out_t *p_out,
     int i_ret = es_out_Control( p_out, ES_OUT_SET_JITTER,
                                 i_pts_delay, i_pts_jitter, i_cr_average );
     assert( !i_ret );
-}
-static inline int es_out_GetEsObjects( es_out_t *p_out, int i_id,
-                                       vlc_object_t **pp_decoder, vout_thread_t **pp_vout, audio_output_t **pp_aout )
-{
-    return es_out_Control( p_out, ES_OUT_GET_ES_OBJECTS_BY_ID, i_id, pp_decoder, pp_vout, pp_aout );
 }
 static inline int es_out_GetGroupForced( es_out_t *p_out )
 {
