@@ -1741,7 +1741,18 @@
     self = [super init];
 
     if (self != nil) {
-        vlc_object = vlc_object_hold(object);
+        const char *tn = vlc_object_typename(object);
+        if (!strcmp(tn, "input"))  {
+            input_Hold((input_thread_t *)object);
+        }
+        if (!strcmp(tn, "audio output")) {
+            aout_Hold((audio_output_t *)object);
+        }
+        if (!strcmp(tn, "video output")) {
+            vout_Hold((vout_thread_t *)object);
+        }
+        
+        vlc_object = object;
         psz_name = strdup(name);
         i_type = type;
         value = val;
