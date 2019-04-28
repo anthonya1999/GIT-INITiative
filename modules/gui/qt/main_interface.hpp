@@ -105,6 +105,7 @@ public:
     int getControlsVisibilityStatus();
     bool isPlDocked() { return ( b_plDocked != false ); }
     bool isInterfaceFullScreen() { return b_interfaceFullScreen; }
+    bool isInterfaceMinimized() { return b_interfaceMinimize; }
     bool isInterfaceAlwaysOnTop() { return b_interfaceOnTop; }
     StandardPLPanel* getPlaylistView();
 
@@ -190,6 +191,7 @@ protected:
     bool                 b_hideAfterCreation;
     bool                 b_minimalView;         ///< Minimal video
     bool                 b_interfaceFullScreen;
+    bool                 b_interfaceMinimize;
     bool                 b_interfaceOnTop;      ///keep UI on top
     bool                 b_pauseOnMinimize;
     bool                 b_maximizedView;
@@ -218,6 +220,8 @@ public slots:
     void hideUpdateSystrayMenu();
     void toggleAdvancedButtons();
     void toggleInterfaceFullScreen();
+    void toggleInterfaceMinimize();
+    void setInterfaceMinimize( bool );
     void toggleFSC();
     void setInterfaceAlwaysOnTop( bool );
 
@@ -293,6 +297,8 @@ signals:
     void askBoss();
     void askRaise();
     void kc_pressed(); /* easter eggs */
+
+    void minimizeInterfaceToggled( bool );
 };
 
 #endif

@@ -494,8 +494,16 @@ QMenu *VLCMenuBar::ViewMenu( intf_thread_t *p_intf, QMenu *current, MainInterfac
 
     menu->addSeparator();
 
+    action = menu->addAction( qtr( "&Hide" ) );
+    action->setShortcut( qtr( "Ctrl+Shift+H" ) );
+    action->setCheckable( true );
+    action->setChecked( mi->isInterfaceMinimized() );
+    CONNECT( action, triggered( bool ), mi, setInterfaceMinimize( bool ) );
+
+    menu->addSeparator();
+
     action = menu->addAction( qtr( "Always on &top" ) );
-    action->setShortcut( qtr( "Ctrl+1" ) ); // see ticket 3131
+    action->setShortcut( qtr( "Ctrl+Shift+1" ) );
     action->setCheckable( true );
     action->setChecked( mi->isInterfaceAlwaysOnTop() );
     CONNECT( action, triggered( bool ), mi, setInterfaceAlwaysOnTop( bool ) );
