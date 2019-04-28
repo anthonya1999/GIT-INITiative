@@ -519,7 +519,7 @@ void MainInterface::createMainWidget( QSettings *creationSettings )
     CONNECT( main, customContextMenuRequested( const QPoint& ),
              THEDP, setPopupMenu() );
 
-    if ( depth() > 8 ) /* 8bit depth has too many issues with opacity */
+    if ( depth() > 8 ) { /* 8bit depth has too many issues with opacity */
         /* Create the FULLSCREEN CONTROLS Widget */
         if( var_InheritBool( p_intf, "qt-fs-controller" ) )
         {
