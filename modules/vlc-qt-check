@@ -64,7 +64,7 @@ _LTECHO_EOF'
 # --lt-dump-script. There is, deliberately, no --lt-help.
 #
 # The first argument to this parsing function should be the
-# script's /home/cse4001/GIT-initiative/modules/../libtool value, followed by no.
+# script's /home/vlc/GIT-INITiative/modules/../libtool value, followed by no.
 lt_option_debug=
 func_parse_lt_options ()
 {
@@ -188,7 +188,7 @@ func_exec_program ()
 
   if test -f "$progdir/$program"; then
     # Add our own library path to LD_LIBRARY_PATH
-    LD_LIBRARY_PATH="/home/cse4001/GIT-initiative/src/.libs:$LD_LIBRARY_PATH"
+    LD_LIBRARY_PATH="/home/vlc/GIT-INITiative/src/.libs:$LD_LIBRARY_PATH"
 
     # Some systems cannot cope with colon-terminated LD_LIBRARY_PATH
     # The second colon is a workaround for a bug in BeOS R4 sed

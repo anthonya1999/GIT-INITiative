@@ -110,12 +110,12 @@ MainInterface::MainInterface( intf_thread_t *_p_intf ) : QVLCMW( _p_intf ),
     playlistVisible      = false;
     input_name           = "";
     b_interfaceFullScreen= false;
+    b_interfaceMinimize  = false;
     b_hasPausedWhenMinimized = false;
     i_kc_offset          = false;
     b_maximizedView      = false;
     b_isWindowTiled      = false;
     b_interfaceOnTop     = false;
-    //setInterfaceAlwaysOnTop(1);
 
     /* Ask for Privacy */
     FirstRun::CheckAndRun( this, p_intf );
@@ -151,7 +151,6 @@ MainInterface::MainInterface( intf_thread_t *_p_intf ) : QVLCMW( _p_intf ),
 
     /* Should the UI stays on top of other windows */
     b_interfaceOnTop = var_InheritBool( p_intf, "video-on-top" );
-    printf("\nvar_InheritBool returns: %d\n", b_interfaceOnTop);
 #ifdef QT5_HAS_WAYLAND
     b_hasWayland = QGuiApplication::platformName()
         .startsWith(QLatin1String("wayland"), Qt::CaseInsensitive);
@@ -168,9 +167,8 @@ MainInterface::MainInterface( intf_thread_t *_p_intf ) : QVLCMW( _p_intf ),
     VLCMenuBar::createMenuBar( this, p_intf );
     CONNECT( THEMIM->getIM(), voutListChanged( vout_thread_t **, int ),
              THEDP, destroyPopupMenu() );
-    printf("before createMainWidget %d************************************************** \n", b_interfaceOnTop);
     createMainWidget( settings );
-    printf("after createMainWidget %d************************************************** \n", b_interfaceOnTop);
+
     /**************
      * Status Bar *
      **************/
@@ -529,8 +527,6 @@ void MainInterface::createMainWidget( QSettings *creationSettings )
             CONNECT( fullscreenControls, keyPressed( QKeyEvent * ),
                      this, handleKeyPress( QKeyEvent * ) );
         }
-    if (b_interfaceOnTop){
-	setWindowFlags( windowFlags() | Qt::WindowStaysOnTopHint | Qt::X11BypassWindowManagerHint );
     }
 }
 
@@ -947,7 +943,6 @@ void MainInterface::setVideoFullScreen( bool fs )
  * Emit askVideoOnTop() to invoke this from other thread. */
 void MainInterface::setVideoOnTop( bool on_top )
 {
-printf("*************************************************In setVideoOnTop\n");
 
     //don't apply changes if user has already sets its interface on top
     if ( b_interfaceOnTop )
@@ -959,22 +954,17 @@ printf("*************************************************In setVideoOnTop\n");
         newflags = oldflags | Qt::WindowStaysOnTopHint;
     else
         newflags = oldflags & ~Qt::WindowStaysOnTopHint;
-    //if( newflags != oldflags && !b_videoFullScreen )
-   // {
         setWindowFlags( windowFlags() & ~Qt::WindowStaysOnTopHint);
-
-    //QWidget::raise();
-    //QWidget::activateWindow();
         show(); /* necessary to apply window flags */
-   // }
+
 
 }
 void MainInterface::setInterfaceAlwaysOnTop( bool on_top )
 {
-    //printf("In setInterfaceAlwaysOnTop\n");
     b_interfaceOnTop = on_top;
     Qt::WindowFlags oldflags = windowFlags(), newflags;
 
+/* Check if platform is X11 */
     if (QX11Info::isPlatformX11()) {
 	if( on_top ){
             newflags = (oldflags | Qt::WindowStaysOnTopHint | Qt::X11BypassWindowManagerHint);
@@ -990,41 +980,18 @@ void MainInterface::setInterfaceAlwaysOnTop( bool on_top )
     	else{
             newflags = oldflags & ~(Qt::WindowStaysOnTopHint | Qt::BypassWindowManagerHint);
 	}
-    
+
     }
 
     if( newflags != oldflags && !b_videoFullScreen )
     {
         setWindowFlags( newflags );
-    
+
         show(); /* necessary to apply window flags */
 
     }
 }
-/*
-void MainInterface::setInterfaceAlwaysOnTop( bool on_top )
-{
 
-    printf("In setInterfaceAlwaysOnTop\n");
-    printf("on_top = %d\n", on_top);
-    b_interfaceOnTop = on_top;
- 
-    if( b_interfaceOnTop == true ) {
-        printf("In if\n");
-	setWindowFlags( windowFlags() | Qt::WindowStaysOnTopHint | Qt::BypassWindowManagerHint );
-
-    }
-    else {
-        printf("In else\n");
-	setWindowFlags( windowFlags() & ~(Qt::WindowStaysOnTopHint | Qt::BypassWindowManagerHint));
-
-    }
-    QWidget::raise();
-    QWidget::activateWindow();
-    show();  necessary to apply window flags 
-    
-}
-*/
 /* Asynchronous calls for video window contrlos */
 int MainInterface::enableVideo( vout_window_t *p_wnd,
                                  const vout_window_cfg_t *cfg )
@@ -1773,6 +1740,23 @@ void MainInterface::toggleInterfaceFullScreen()
     if( !b_videoFullScreen )
         setInterfaceFullScreen( b_interfaceFullScreen );
     emit fullscreenInterfaceToggled( b_interfaceFullScreen );
+}
+
+void MainInterface::setInterfaceMinimize( bool min )
+{
+    if( min )
+      setWindowState( windowState() | Qt::WindowMinimized );
+    else
+      setWindowState( windowState() & ~Qt::WindowMinimized );
+
+}
+
+void MainInterface::toggleInterfaceMinimize()
+{
+    b_interfaceMinimize = !b_interfaceMinimize;
+    if( !b_interfaceMinimize )
+        setInterfaceMinimize( b_interfaceMinimize );
+    emit minimizeInterfaceToggled( b_interfaceMinimize );
 }
 
 void MainInterface::emitBoss()
