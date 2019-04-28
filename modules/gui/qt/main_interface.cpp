@@ -110,6 +110,7 @@ MainInterface::MainInterface( intf_thread_t *_p_intf ) : QVLCMW( _p_intf ),
     playlistVisible      = false;
     input_name           = "";
     b_interfaceFullScreen= false;
+    b_interfaceMinimize  = false;
     b_hasPausedWhenMinimized = false;
     i_kc_offset          = false;
     b_maximizedView      = false;
@@ -990,13 +991,13 @@ void MainInterface::setInterfaceAlwaysOnTop( bool on_top )
     	else{
             newflags = oldflags & ~(Qt::WindowStaysOnTopHint | Qt::BypassWindowManagerHint);
 	}
-    
+
     }
 
     if( newflags != oldflags && !b_videoFullScreen )
     {
         setWindowFlags( newflags );
-    
+
         show(); /* necessary to apply window flags */
 
     }
@@ -1008,7 +1009,7 @@ void MainInterface::setInterfaceAlwaysOnTop( bool on_top )
     printf("In setInterfaceAlwaysOnTop\n");
     printf("on_top = %d\n", on_top);
     b_interfaceOnTop = on_top;
- 
+
     if( b_interfaceOnTop == true ) {
         printf("In if\n");
 	setWindowFlags( windowFlags() | Qt::WindowStaysOnTopHint | Qt::BypassWindowManagerHint );
@@ -1021,8 +1022,8 @@ void MainInterface::setInterfaceAlwaysOnTop( bool on_top )
     }
     QWidget::raise();
     QWidget::activateWindow();
-    show();  necessary to apply window flags 
-    
+    show();  necessary to apply window flags
+
 }
 */
 /* Asynchronous calls for video window contrlos */
@@ -1773,6 +1774,23 @@ void MainInterface::toggleInterfaceFullScreen()
     if( !b_videoFullScreen )
         setInterfaceFullScreen( b_interfaceFullScreen );
     emit fullscreenInterfaceToggled( b_interfaceFullScreen );
+}
+
+void MainInterface::setInterfaceMinimize( bool min )
+{
+    if( min )
+      setWindowState( windowState() | Qt::WindowMinimized );
+    else
+      setWindowState( windowState() & ~Qt::WindowMinimized );
+
+}
+
+void MainInterface::toggleInterfaceMinimize()
+{
+    b_interfaceMinimize = !b_interfaceMinimize;
+    if( !b_interfaceMinimize )
+        setInterfaceMinimize( b_interfaceMinimize );
+    emit minimizeInterfaceToggled( b_interfaceMinimize );
 }
 
 void MainInterface::emitBoss()
